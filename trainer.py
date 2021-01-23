@@ -64,6 +64,48 @@ class EmotionDataset(Dataset):
     def __len__(self):
         return len(self.texts)
 
+class SemEval2018EmotionDataset(Dataset):
+    label_index_map = {
+        'anger' : 0,
+        'anticipation' : 1,
+        'disgust' : 2,
+        'fear' : 3,
+        'joy' : 4,
+        'love' : 5,
+        'optimism' : 6,
+        'pessimism' : 7,
+        'sadness' : 8,
+        'surprise' : 9,
+        'trust' : 10,
+    }
+
+    def __init__(self, config, phase):
+        self.config = config
+        n_labels = len(self.label_index_map.keys())
+
+        filepath = os.path.join(config.dataroot, f'{phase}.txt')
+        self.texts = []
+        self.labels = torch.empty(0)
+        with io.open(filepath, encoding='utf-8') as f:
+            reader = csv.reader(f, delimiter='\t')
+            for i, row in enumerate(reader):
+                if i == 0:
+                    continue
+                self.texts.append(row[1])
+
+                labels = torch.zeros(1, n_labels)
+                for i in self.label_index_map.values():
+                    column_index = i + 2
+                    labels[0][i] = int(row[column_index])
+
+                self.labels = torch.cat([self.labels, labels])
+
+    def __getitem__(self, index):
+        return self.texts[index], self.labels[index]
+
+    def __len__(self):
+        return len(self.texts)
+
 
 class Trainer:
     def __init__(self, config):
@@ -75,10 +117,10 @@ class Trainer:
         self.optimizer = AdamW(self.model.parameters(), lr=config.lr)
 
         if not self.config.predict:
-            data_train= EmotionDataset(self.config, 'train')
+            data_train= self.config.dataset_class(self.config, 'train')
             self.dataloader_train = DataLoader(data_train, batch_size=self.config.batch_size, shuffle=True)
 
-            data_eval= EmotionDataset(self.config, 'eval')
+            data_eval= self.config.dataset_class(self.config, 'eval')
             self.dataloader_eval = DataLoader(data_eval, batch_size=self.config.batch_size, shuffle=False)
 
         self.writer = SummaryWriter(log_dir=config.tensorboard_log_dir)
@@ -106,7 +148,6 @@ class Trainer:
         self.model.train()
 
         for i, (texts, labels) in enumerate(self.dataloader_train):
-            print(labels)
             start_time = time.time()
             inputs = self.tokenizer(texts, return_tensors='pt', padding=True).to(self.config.device)
             labels = labels.to(self.config.device)
@@ -159,7 +200,7 @@ class Trainer:
 
         self.__log_confusion_matrix(all_preds, all_labels, epoch)
 
-        columns = EmotionDataset.label_index_map.keys()
+        columns = self.config.dataset_class.label_index_map.keys()
         df = pd.DataFrame(metrics.classification_report(all_labels, all_preds, output_dict=True))
         print(tabulate(df, headers='keys', tablefmt="github", floatfmt='.2f'))
 
@@ -174,11 +215,11 @@ class Trainer:
 
     @torch.no_grad()
     def predict(self):
-        label_map = {value: key for key, value in EmotionDataset.label_index_map.items()}
+        label_map = {value: key for key, value in self.config.dataset_class.label_index_map.items()}
         label_map[-1] = 'none'
         np.set_printoptions(precision=0)
 
-        dataset = EmotionDataset(self.config, 'predict')
+        dataset = self.config.dataset_class(self.config, 'predict')
         loader = DataLoader(dataset, batch_size=self.config.batch_size)
 
         output_path = os.path.join(self.config.dataroot, 'predict_result')
@@ -196,10 +237,10 @@ class Trainer:
 
     def __log_confusion_matrix(self, all_preds, all_labels, epoch):
         buf = io.BytesIO()
-        label_map = {value: key for key, value in EmotionDataset.label_index_map.items()}
+        label_map = {value: key for key, value in self.config.dataset_class.label_index_map.items()}
 
         if self.config.multi_labels:
-            fig, axes = plt.subplots(1, 5, figsize=(25, 5))
+            fig, axes = plt.subplots(1, len(label_map.keys()), figsize=(25, 5))
             cm = metrics.multilabel_confusion_matrix(y_pred=all_preds.numpy(), y_true=all_labels.numpy())
             for i in range(len(label_map.keys())):
                 display = metrics.ConfusionMatrixDisplay(cm[i], display_labels=['T', 'F'])
@@ -271,6 +312,7 @@ if __name__ == '__main__':
     parser.add_argument('--freeze_base', action='store_true')
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--multi_labels', action='store_true')
+    parser.add_argument('--dataset_class_name', default='EmotionDataset', choices=['EmotionDataset', 'SemEval2018EmotionDataset'])
     args = parser.parse_args()
 
     pd.options.display.precision = 3
@@ -291,6 +333,11 @@ if __name__ == '__main__':
 
     args.model_path = f'{args.dataroot}/{args.name}.pth'
     args.best_model_path = f'{args.dataroot}/{args.name}.best.pth'
+
+    args.dataset_class = globals()[args.dataset_class_name]
+    if args.dataset_class_name == 'SemEval2018EmotionDataset':
+        args.n_labels = 11
+        args.multi_labels = True
 
     trainer = Trainer(args)
 
