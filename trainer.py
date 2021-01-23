@@ -33,10 +33,11 @@ class EmotionDataset(Dataset):
 
     def __init__(self, config, phase):
         self.config = config
+        n_labels = len(self.label_index_map.keys())
 
         filepath = os.path.join(config.dataroot, f'{phase}.txt')
         self.texts = []
-        self.labels = []
+        self.labels = torch.empty(0)
         with io.open(filepath, encoding='utf-8') as f:
             reader = csv.reader(f, delimiter='\t')
             for row in reader:
@@ -48,8 +49,14 @@ class EmotionDataset(Dataset):
 
                 self.texts.append(text)
 
-                label = -1 if label_name == 'none' else self.label_index_map[label_name]
-                self.labels.append(label)
+                labels = torch.zeros(1, n_labels) 
+                if label_name == 'none':
+                    assert self.config.predict, 'label is necessary not when args.predict == true'
+                else:
+                    index = self.label_index_map[label_name]
+                    labels[0][index] = 1
+
+                self.labels = torch.cat([self.labels, labels])
 
     def __getitem__(self, index):
         return self.texts[index], self.labels[index]
@@ -86,30 +93,40 @@ class Trainer:
             for param in self.model.base_model.parameters():
                 param.requires_grad = False
 
+    def forward(self, inputs, labels):
+        if self.config.multi_labels:
+            outputs = self.model(**inputs)
+            loss = F.binary_cross_entropy_with_logits(outputs.logits, labels)
+            return loss, 0 < outputs.logits
+
+        outputs = self.model(**inputs, labels=torch.argmax(labels, dim=1))
+        return outputs.loss, torch.argmax(outputs.logits, dim=1)
+
     def train(self, epoch):
         self.model.train()
 
         for i, (texts, labels) in enumerate(self.dataloader_train):
+            print(labels)
             start_time = time.time()
             inputs = self.tokenizer(texts, return_tensors='pt', padding=True).to(self.config.device)
             labels = labels.to(self.config.device)
 
-            outputs = self.model(**inputs, labels=labels)
+            loss, _ = self.forward(inputs, labels)
 
             if self.config.fp16:
-                with apex.amp.scale_loss(outputs.loss, self.optimizer) as scaled_loss:
+                with apex.amp.scale_loss(loss, self.optimizer) as scaled_loss:
                     scaled_loss.backward()
             else:
-                outputs.loss.backward()
+                loss.backward()
 
             self.optimizer.step()
             self.optimizer.zero_grad()
 
             if i % self.config.log_interval == 0:
                 elapsed_time = time.time() - start_time
-                self.config.logger.info('train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}'.format(epoch, i, outputs.loss, elapsed_time))
+                self.config.logger.info('train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}'.format(epoch, i, loss, elapsed_time))
 
-            self.writer.add_scalar('loss/train', outputs.loss, epoch, start_time)
+            self.writer.add_scalar('loss/train', loss, epoch, start_time)
 
         self.save(self.config.model_path)
 
@@ -126,10 +143,12 @@ class Trainer:
             inputs = self.tokenizer(texts, return_tensors='pt', padding=True).to(self.config.device)
             labels = labels.to(self.config.device)
 
-            outputs = self.model(**inputs, labels=labels)
+            loss, preds = self.forward(inputs, labels)
 
-            preds = torch.argmax(outputs.logits, dim=1)
-            losses.append(outputs.loss)
+            losses.append(loss)
+
+            if not self.config.multi_labels:
+                labels = torch.argmax(labels, dim=1)
 
             all_labels = torch.cat([all_labels, labels.cpu()])
             all_preds = torch.cat([all_preds, preds.cpu()])
@@ -176,13 +195,32 @@ class Trainer:
                     f.write(f'{pred_label_name}\t{prob}\t{true_label_name}\t{texts[j]}\n')
 
     def __log_confusion_matrix(self, all_preds, all_labels, epoch):
-        label_map = {value: key for key, value in EmotionDataset.label_index_map.items()}
-        cm = metrics.confusion_matrix(y_pred=all_preds.numpy(), y_true=all_labels.numpy(), normalize='true')
-        display = metrics.ConfusionMatrixDisplay(cm, display_labels=label_map.values())
-        display.plot(cmap=plt.cm.Blues)
-        
         buf = io.BytesIO()
-        display.figure_.savefig(buf, format="png", dpi=180)
+        label_map = {value: key for key, value in EmotionDataset.label_index_map.items()}
+
+        if self.config.multi_labels:
+            fig, axes = plt.subplots(1, 5, figsize=(25, 5))
+            cm = metrics.multilabel_confusion_matrix(y_pred=all_preds.numpy(), y_true=all_labels.numpy())
+            for i in range(len(label_map.keys())):
+                display = metrics.ConfusionMatrixDisplay(cm[i], display_labels=['T', 'F'])
+                display.plot(ax=axes[i], cmap=plt.cm.Blues)
+                display.ax_.set_title(label_map[i])
+                display.im_.colorbar.remove()
+            plt.subplots_adjust(wspace=0.1, hspace=0.1)
+            fig.colorbar(display.im_, ax=axes)
+            plt.savefig(buf, format="png", dpi=180)
+
+            print(cm)
+        else:
+            cm = metrics.confusion_matrix(y_pred=all_preds.numpy(), y_true=all_labels.numpy(), normalize='true')
+            display = metrics.ConfusionMatrixDisplay(cm, display_labels=label_map.values())
+            display.plot(cmap=plt.cm.Blues)
+            display.figure_.savefig(buf, format="png", dpi=180)
+            
+            cm = pycm.ConfusionMatrix(actual_vector=all_labels.numpy(), predict_vector=all_preds.numpy())
+            cm.relabel(mapping=label_map)
+            cm.print_normalized_matrix()
+
         buf.seek(0)
         img_arr = np.frombuffer(buf.getvalue(), dtype=np.uint8)
         buf.close()
@@ -191,10 +229,6 @@ class Trainer:
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
         self.writer.add_image('confusion_maatrix', img, epoch, dataformats='HWC')
-        
-        cm = pycm.ConfusionMatrix(actual_vector=all_labels.numpy(), predict_vector=all_preds.numpy())
-        cm.relabel(mapping=label_map)
-        cm.print_normalized_matrix()
 
     def save(self, model_path):
         data = {
@@ -236,6 +270,7 @@ if __name__ == '__main__':
     parser.add_argument('--name', default=None)
     parser.add_argument('--freeze_base', action='store_true')
     parser.add_argument('--lr', type=float, default=1e-5)
+    parser.add_argument('--multi_labels', action='store_true')
     args = parser.parse_args()
 
     pd.options.display.precision = 3
