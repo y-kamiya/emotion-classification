@@ -9,6 +9,7 @@ import torch
 import apex
 from torch import nn
 from torch.nn import functional as F
+import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from transformers import BertTokenizer, BertForSequenceClassification, AdamW
@@ -115,6 +116,7 @@ class Trainer:
         self.tokenizer = BertTokenizer.from_pretrained(model_name, padding=True)
         self.model = BertForSequenceClassification.from_pretrained(model_name, num_labels=config.n_labels, return_dict=True).to(config.device)
         self.optimizer = AdamW(self.model.parameters(), lr=config.lr)
+        self.warmup_scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / config.warmup_steps))
 
         if not self.config.predict:
             data_train= self.config.dataset_class(self.config, 'train')
@@ -163,9 +165,11 @@ class Trainer:
             self.optimizer.step()
             self.optimizer.zero_grad()
 
+            self.warmup_scheduler.step()
+
             if i % self.config.log_interval == 0:
                 elapsed_time = time.time() - start_time
-                self.config.logger.info('train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}'.format(epoch, i, loss, elapsed_time))
+                self.config.logger.info('train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}, lr: {:.2e}'.format(epoch, i, loss, elapsed_time, self.warmup_scheduler.get_lr()[0]))
 
             self.writer.add_scalar('loss/train', loss, epoch, start_time)
 
@@ -325,6 +329,7 @@ if __name__ == '__main__':
     parser.add_argument('--name', default=None)
     parser.add_argument('--freeze_base', action='store_true')
     parser.add_argument('--lr', type=float, default=1e-5)
+    parser.add_argument('--warmup_steps', type=int, default=1000)
     parser.add_argument('--multi_labels', action='store_true')
     parser.add_argument('--dataset_class_name', default='EmotionDataset', choices=['EmotionDataset', 'SemEval2018EmotionDataset'])
     args = parser.parse_args()
