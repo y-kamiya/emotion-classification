@@ -202,12 +202,15 @@ class Trainer:
 
         columns = self.config.dataset_class.label_index_map.keys()
         df = pd.DataFrame(metrics.classification_report(all_labels, all_preds, output_dict=True))
-        print(tabulate(df, headers='keys', tablefmt="github", floatfmt='.2f'))
+        print(tabulate(df, headers='keys', tablefmt="github", floatfmt='.3f'))
 
         if not self.config.eval_only:
-            f1_score = df.loc['f1-score', 'macro avg']
+            f1_score = df.loc['f1-score']
+            micro = f1_score['micro avg'] if 'micro avg' in f1_score else f1_score['accuracy']
+            macro = f1_score['macro avg']
             self.writer.add_scalar('loss/eval', average_loss, epoch, start_time)
-            self.writer.add_scalar('loss/f1_score', f1_score, epoch, start_time)
+            self.writer.add_scalar('metrics/f1_score_micro(accuracy)', micro, epoch, start_time)
+            self.writer.add_scalar('metrics/f1_score_macro', macro, epoch, start_time)
 
             if self.best_f1_score < f1_score:
                 self.best_f1_score = f1_score
@@ -239,19 +242,26 @@ class Trainer:
         buf = io.BytesIO()
         label_map = {value: key for key, value in self.config.dataset_class.label_index_map.items()}
 
+        np.set_printoptions(precision=3)
+
         if self.config.multi_labels:
             fig, axes = plt.subplots(1, len(label_map.keys()), figsize=(25, 5))
             cm = metrics.multilabel_confusion_matrix(y_pred=all_preds.numpy(), y_true=all_labels.numpy())
             for i in range(len(label_map.keys())):
-                display = metrics.ConfusionMatrixDisplay(cm[i], display_labels=['T', 'F'])
-                display.plot(ax=axes[i], cmap=plt.cm.Blues)
+                mat = np.array([[cm[i][1][1], cm[i][1][0]], [cm[i][0][1], cm[i][0][0]]])
+                result = mat / mat.sum(axis=1, keepdims=True)
+                print(f'{label_map[i]}\n{result}\n')
+
+                display = metrics.ConfusionMatrixDisplay(result, display_labels=['P', 'N'])
+                display.plot(ax=axes[i], cmap=plt.cm.Blues, values_format='.2f')
                 display.ax_.set_title(label_map[i])
+                display.ax_.set_ylabel('True label' if i == 0 else '')
+                display.ax_.set_yticklabels(['P', 'N'] if i == 0 else [])
                 display.im_.colorbar.remove()
+
             plt.subplots_adjust(wspace=0.1, hspace=0.1)
             fig.colorbar(display.im_, ax=axes)
             plt.savefig(buf, format="png", dpi=180)
-
-            print(cm)
         else:
             cm = metrics.confusion_matrix(y_pred=all_preds.numpy(), y_true=all_labels.numpy(), normalize='true')
             display = metrics.ConfusionMatrixDisplay(cm, display_labels=label_map.values())
