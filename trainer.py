@@ -212,8 +212,8 @@ class Trainer:
             self.writer.add_scalar('metrics/f1_score_micro(accuracy)', micro, epoch, start_time)
             self.writer.add_scalar('metrics/f1_score_macro', macro, epoch, start_time)
 
-            if self.best_f1_score < f1_score:
-                self.best_f1_score = f1_score
+            if self.best_f1_score < micro:
+                self.best_f1_score = micro
                 self.save(self.config.best_model_path)
 
     @torch.no_grad()
@@ -282,6 +282,9 @@ class Trainer:
         self.writer.add_image('confusion_maatrix', img, epoch, dataformats='HWC')
 
     def save(self, model_path):
+        if self.config.no_save:
+            return
+
         data = {
             'model': self.model.state_dict(),
             'optimizer': self.optimizer.state_dict(),
@@ -318,6 +321,7 @@ if __name__ == '__main__':
     parser.add_argument('--lang', default='ja', choices=['en', 'ja'])
     parser.add_argument('--eval_only', action='store_true')
     parser.add_argument('--predict', action='store_true')
+    parser.add_argument('--no_save', action='store_true')
     parser.add_argument('--name', default=None)
     parser.add_argument('--freeze_base', action='store_true')
     parser.add_argument('--lr', type=float, default=1e-5)
