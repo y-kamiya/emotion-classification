@@ -142,11 +142,7 @@ class Trainer:
 
         model_name = 'cl-tohoku/bert-base-japanese-whole-word-masking' if config.lang == 'ja' else 'bert-base-uncased'
         self.tokenizer = BertTokenizer.from_pretrained(model_name, padding=True)
-        self.model = BertForSequenceClassification.from_pretrained(model_name, num_labels=config.n_labels, return_dict=True)
-        if config.custom_head:
-            self.model.classifier = CustomClassificationHead(config, self.model.config.hidden_size)
-        self.model.to(config.device)
-
+        self.model = self.__create_model(model_name)
         self.optimizer = AdamW(self.model.parameters(), lr=config.lr)
         self.warmup_scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / config.warmup_steps))
 
@@ -168,6 +164,17 @@ class Trainer:
         if self.config.freeze_base:
             for param in self.model.base_model.parameters():
                 param.requires_grad = False
+
+    def __create_model(self, model_name):
+        model = BertForSequenceClassification.from_pretrained(model_name, num_labels=self.config.n_labels, return_dict=True)
+        if self.config.freeze_base_model:
+            for param in model.base_model.parameters():
+                param.requires_grad = False
+
+        if self.config.custom_head:
+            model.classifier = CustomClassificationHead(self.config, model.config.hidden_size)
+
+        return model.to(self.config.device)
 
     def forward(self, inputs, labels):
         if self.config.multi_labels:
@@ -365,6 +372,7 @@ if __name__ == '__main__':
     parser.add_argument('--multi_labels', action='store_true')
     parser.add_argument('--dataset_class_name', default='EmotionDataset', choices=['EmotionDataset', 'SemEval2018EmotionDataset'])
     parser.add_argument('--custom_head', action='store_true')
+    parser.add_argument('--freeze_base_model', action='store_true')
     args = parser.parse_args()
 
     pd.options.display.precision = 3
