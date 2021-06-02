@@ -1,3 +1,10 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3694dd52a53aa3fbf2e16dc79331a7b0eff7a629000e5c7e8eb9ea954350232a
-size 93
+torch
+tensorboard
+logzero
+transformers
+pycm
+sklearn
+pandas
+matplotlib
+opencv-python
+tabulate
