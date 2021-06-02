@@ -4,7 +4,7 @@ USE_CPU=$1
 
 git submodule update --init
 
-pip install torch torchvision tensorboard logzero transformers
+pip install -r requirements.txt
 
 pushd apex
 git checkout 11faaca7c8ff7a7ba6d55854a9ee2689784f7ca5

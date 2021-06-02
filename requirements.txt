@@ -1,0 +1,10 @@
+torch
+tensorboard
+logzero
+transformers
+pycm
+sklearn
+pandas
+matplotlib
+opencv-python
+tabulate
