@@ -271,6 +271,8 @@ class Trainer:
         output_path = os.path.join(self.config.dataroot, 'predict_result')
         with open(output_path, 'w') as f:
             for i, (texts, labels) in enumerate(loader):
+                if not self.config.multi_labels:
+                    labels = torch.argmax(labels, dim=1)
                 inputs = self.tokenizer(texts, return_tensors='pt', padding=True).to(self.config.device)
                 outputs = self.model(**inputs)
                 preds = torch.argmax(outputs.logits, dim=1)
