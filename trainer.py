@@ -283,6 +283,8 @@ class Trainer:
                     prob = probs[j].cpu().numpy()
                     f.write(f'{pred_label_name}\t{prob}\t{true_label_name}\t{texts[j]}\n')
 
+        self.config.logger.info(f'write predicted result to {output_path}')
+
     def __log_confusion_matrix(self, all_preds, all_labels, epoch):
         buf = io.BytesIO()
         label_map = {value: key for key, value in self.config.dataset_class.label_index_map.items()}
@@ -342,7 +344,8 @@ class Trainer:
 
     def load(self, model_path):
         if not os.path.isfile(model_path):
-            return
+            self.config.logger.error(f'model_path: {model_path} is not found')
+            sys.exit()
 
         data = torch.load(model_path, map_location=self.config.device_name)
         self.model.load_state_dict(data['model'])
@@ -385,7 +388,6 @@ if __name__ == '__main__':
     args.device = torch.device(args.device_name)
 
     logger = setup_logger(name=__name__, level=args.loglevel)
-    logger.info(args)
     args.logger = logger
 
     if args.name is None:
@@ -400,6 +402,8 @@ if __name__ == '__main__':
     if args.dataset_class_name == 'SemEval2018EmotionDataset':
         args.n_labels = 11
         args.multi_labels = True
+
+    logger.info(args)
 
     trainer = Trainer(args)
 
