@@ -43,8 +43,8 @@ class EmotionDataset(Dataset):
         with io.open(filepath, encoding='utf-8') as f:
             reader = csv.reader(f, delimiter='\t')
             for row in reader:
-                text = row[0]
-                label_name = 'none' if len(row) == 1 else row[1]
+                text = '' if len(row) == 0 else row[0]
+                label_name = 'none' if len(row) <= 1 else row[1]
                 if label_name not in self.label_index_map and phase != 'predict':
                     self.config.logger.warn(f'{label_name} is invalid label name, skipped')
                     continue
