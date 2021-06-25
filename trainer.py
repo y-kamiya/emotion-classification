@@ -21,6 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import cv2
 from tabulate import tabulate
+from tqdm import tqdm
 
 
 class EmotionDataset(Dataset):
@@ -270,7 +271,7 @@ class Trainer:
 
         output_path = os.path.join(self.config.dataroot, 'predict_result')
         with open(output_path, 'w') as f:
-            for i, (texts, labels) in enumerate(loader):
+            for i, (texts, labels) in tqdm(enumerate(loader)):
                 if not self.config.multi_labels:
                     labels = torch.tensor([-1 if sum(onehot) == 0 else torch.argmax(onehot) for onehot in labels])
                 inputs = self.tokenizer(texts, return_tensors='pt', padding=True).to(self.config.device)
