@@ -12,6 +12,7 @@ from torch.nn import functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from torch.utils.tensorboard import SummaryWriter
+import mlflow
 from transformers import BertTokenizer, BertForSequenceClassification, AdamW
 from logzero import setup_logger
 from sklearn import metrics
@@ -46,7 +47,7 @@ class EmotionDataset(Dataset):
                 text = '' if len(row) == 0 else row[0]
                 label_name = 'none' if len(row) <= 1 else row[1]
                 if label_name not in self.label_index_map and phase != 'predict':
-                    self.config.logger.warn(f'{label_name} is invalid label name, skipped')
+                    self.config.logger.warning(f'{label_name} is invalid label name, skipped')
                     continue
 
                 self.texts.append(text)
@@ -141,6 +142,9 @@ class Trainer:
     def __init__(self, config):
         self.config = config
 
+        mlflow.set_tracking_uri('mlruns')
+        mlflow.set_experiment('test_exp')
+
         model_name = 'cl-tohoku/bert-base-japanese-whole-word-masking' if config.lang == 'ja' else 'bert-base-uncased'
         self.tokenizer = BertTokenizer.from_pretrained(model_name, padding=True)
         self.model = self.__create_model(model_name)
@@ -212,6 +216,7 @@ class Trainer:
                 self.config.logger.info('train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}, lr: {:.2e}'.format(epoch, i, loss, elapsed_time, self.warmup_scheduler.get_lr()[0]))
 
             self.writer.add_scalar('loss/train', loss, epoch, start_time)
+            mlflow.log_metric('loss/train', loss.item(), epoch)
 
         self.save(self.config.model_path)
 
@@ -252,6 +257,9 @@ class Trainer:
             f1_score = df.loc['f1-score']
             micro = f1_score['micro avg'] if 'micro avg' in f1_score else f1_score['accuracy']
             macro = f1_score['macro avg']
+            mlflow.log_metric('loss/eval', average_loss.item(), epoch)
+            mlflow.log_metric('metrics/f1_score_micro', micro, epoch)
+            mlflow.log_metric('metrics/f1_score_macro', macro, epoch)
             self.writer.add_scalar('loss/eval', average_loss, epoch, start_time)
             self.writer.add_scalar('metrics/f1_score_micro(accuracy)', micro, epoch, start_time)
             self.writer.add_scalar('metrics/f1_score_macro', macro, epoch, start_time)
@@ -327,6 +335,8 @@ class Trainer:
         img = cv2.imdecode(img_arr, 1)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
+        cv2.imwrite('confusion.png', img)
+        mlflow.log_artifact('confusion.png')
         self.writer.add_image('confusion_maatrix', img, epoch, dataformats='HWC')
 
     def save(self, model_path):
@@ -405,6 +415,7 @@ if __name__ == '__main__':
         args.multi_labels = True
 
     logger.info(args)
+    mlflow.log_params(vars(args))
 
     trainer = Trainer(args)
 
