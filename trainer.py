@@ -142,9 +142,6 @@ class Trainer:
     def __init__(self, config):
         self.config = config
 
-        mlflow.set_tracking_uri('mlruns')
-        mlflow.set_experiment('test_exp')
-
         model_name = 'cl-tohoku/bert-base-japanese-whole-word-masking' if config.lang == 'ja' else 'bert-base-uncased'
         self.tokenizer = BertTokenizer.from_pretrained(model_name, padding=True)
         self.model = self.__create_model(model_name)
