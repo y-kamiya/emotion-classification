@@ -1,4 +1,5 @@
 torch==1.8
+mlflow
 tensorboard
 logzero
 transformers
