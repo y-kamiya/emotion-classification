@@ -23,18 +23,18 @@ import cv2
 from tabulate import tabulate
 from tqdm import tqdm
 
-from dataset import EmotionDataset, SemEval2018EmotionDataset
+from dataset import EmotionDataset, SemEval2018EmotionDataset, TextClassificationDataset
 
 
 class CustomClassificationHead(nn.Module):
-    def __init__(self, config, input_dim):
+    def __init__(self, config, input_dim, n_labels):
         super().__init__()
         self.config = config
 
         self.fc1 = nn.Linear(input_dim, 4096)
         self.fc2 = nn.Linear(4096, 2048)
         self.fc3 = nn.Linear(2048, 1024)
-        self.fc4 = nn.Linear(1024, config.n_labels)
+        self.fc4 = nn.Linear(1024, n_labels)
         self.dropout = nn.Dropout(p=0.3)
         self.prelu1 = nn.PReLU()
         self.prelu2 = nn.PReLU()
@@ -58,18 +58,21 @@ class Trainer:
     def __init__(self, config):
         self.config = config
 
-        model_name = 'cl-tohoku/bert-base-japanese-whole-word-masking' if config.lang == 'ja' else 'bert-base-uncased'
-        self.tokenizer = BertTokenizer.from_pretrained(model_name, padding=True)
-        self.model = self.__create_model(model_name)
-        self.optimizer = AdamW(self.model.parameters(), lr=config.lr)
-        self.warmup_scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / config.warmup_steps))
-
-        if not self.config.predict:
-            data_train= self.config.dataset_class(self.config, 'train')
-            self.dataloader_train = DataLoader(data_train, batch_size=self.config.batch_size, shuffle=True)
+        if self.config.predict:
+            dataset = self.config.dataset_class(self.config, 'predict')
+            self.dataloader_predict = DataLoader(dataset, batch_size=self.config.batch_size)
+        else:
+            dataset = self.config.dataset_class(self.config, 'train')
+            self.dataloader_train = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True)
 
             data_eval= self.config.dataset_class(self.config, 'eval')
             self.dataloader_eval = DataLoader(data_eval, batch_size=self.config.batch_size, shuffle=False)
+
+        model_name = 'cl-tohoku/bert-base-japanese-whole-word-masking' if config.lang == 'ja' else 'bert-base-uncased'
+        self.tokenizer = BertTokenizer.from_pretrained(model_name, padding=True)
+        self.model = self.__create_model(model_name, len(dataset.label_index_map))
+        self.optimizer = AdamW(self.model.parameters(), lr=config.lr)
+        self.warmup_scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / config.warmup_steps))
 
         self.writer = SummaryWriter(log_dir=config.tensorboard_log_dir)
         self.best_f1_score = 0.0
@@ -83,14 +86,14 @@ class Trainer:
             for param in self.model.base_model.parameters():
                 param.requires_grad = False
 
-    def __create_model(self, model_name):
-        model = BertForSequenceClassification.from_pretrained(model_name, num_labels=self.config.n_labels, return_dict=True)
+    def __create_model(self, model_name, n_labels):
+        model = BertForSequenceClassification.from_pretrained(model_name, num_labels=n_labels, return_dict=True)
         if self.config.freeze_base_model:
             for param in model.base_model.parameters():
                 param.requires_grad = False
 
         if self.config.custom_head:
-            model.classifier = CustomClassificationHead(self.config, model.config.hidden_size)
+            model.classifier = CustomClassificationHead(self.config, model.config.hidden_size, n_labels)
 
         return model.to(self.config.device)
 
@@ -162,7 +165,6 @@ class Trainer:
 
         self.__log_confusion_matrix(all_preds, all_labels, epoch)
 
-        columns = self.config.dataset_class.label_index_map.keys()
         df = pd.DataFrame(metrics.classification_report(all_labels, all_preds, output_dict=True))
         print(tabulate(df, headers='keys', tablefmt="github", floatfmt='.3f'))
 
@@ -183,16 +185,13 @@ class Trainer:
 
     @torch.no_grad()
     def predict(self):
-        label_map = {value: key for key, value in self.config.dataset_class.label_index_map.items()}
+        label_map = {value: key for key, value in self.dataloader_predict.dataset.label_index_map.items()}
         label_map[-1] = 'none'
         np.set_printoptions(precision=0)
 
-        dataset = self.config.dataset_class(self.config, 'predict')
-        loader = DataLoader(dataset, batch_size=self.config.batch_size)
-
         output_path = os.path.join(self.config.dataroot, 'predict_result')
         with open(output_path, 'w') as f:
-            for i, (texts, labels) in tqdm(enumerate(loader)):
+            for i, (texts, labels) in tqdm(enumerate(self.dataloader_predict)):
                 if not self.config.multi_labels:
                     labels = torch.tensor([-1 if sum(onehot) == 0 else torch.argmax(onehot) for onehot in labels])
                 inputs = self.tokenizer(texts, return_tensors='pt', padding=True).to(self.config.device)
@@ -209,7 +208,8 @@ class Trainer:
 
     def __log_confusion_matrix(self, all_preds, all_labels, epoch):
         buf = io.BytesIO()
-        label_map = {value: key for key, value in self.config.dataset_class.label_index_map.items()}
+        dataset = self.dataloader_eval.dataset
+        label_map = {value: key for key, value in dataset.label_index_map.items()}
 
         np.set_printoptions(precision=3)
 
@@ -299,7 +299,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--warmup_steps', type=int, default=1000)
     parser.add_argument('--multi_labels', action='store_true')
-    parser.add_argument('--dataset_class_name', default='EmotionDataset', choices=['EmotionDataset', 'SemEval2018EmotionDataset'])
+    parser.add_argument('--dataset_class_name', default='EmotionDataset', choices=['EmotionDataset', 'SemEval2018EmotionDataset', 'TextClassificationDataset'])
     parser.add_argument('--custom_head', action='store_true')
     parser.add_argument('--freeze_base_model', action='store_true')
     args = parser.parse_args()
@@ -324,7 +324,6 @@ if __name__ == '__main__':
 
     args.dataset_class = globals()[args.dataset_class_name]
     if args.dataset_class_name == 'SemEval2018EmotionDataset':
-        args.n_labels = 11
         args.multi_labels = True
 
     logger.info(args)

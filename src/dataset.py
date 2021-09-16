@@ -5,18 +5,12 @@ import torch
 from torch.utils.data import Dataset
 
 
-class EmotionDataset(Dataset):
-    label_index_map = {
-        'anger': 0,
-        'disgust': 1,
-        'joy': 2,
-        'sadness': 3,
-        'surprise': 4,
-    }
-
+class TextClassificationDataset(Dataset):
     def __init__(self, config, phase):
         self.config = config
-        n_labels = len(self.label_index_map.keys())
+        self.label_index_map = self.create_label_index_map()
+
+        n_labels = len(self.label_index_map)
 
         filepath = os.path.join(config.dataroot, f'{phase}.txt')
         self.texts = []
@@ -41,11 +35,35 @@ class EmotionDataset(Dataset):
 
                 self.labels = torch.cat([self.labels, labels])
 
+    def create_label_index_map(self):
+        label_set = set()
+        filepath = os.path.join(self.config.dataroot, 'labels.txt')
+        with io.open(filepath, encoding='utf-8') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                label_set.add(row[0])
+                
+        return {label: i for i, label in enumerate(sorted(list(label_set)))}
+
     def __getitem__(self, index):
         return self.texts[index], self.labels[index]
 
     def __len__(self):
         return len(self.texts)
+
+
+class EmotionDataset(TextClassificationDataset):
+    def __init__(self, config, phase):
+        super(EmotionDataset, self).__init__(config, phase)
+
+    def create_label_index_map(self):
+        return {
+            'anger': 0,
+            'disgust': 1,
+            'joy': 2,
+            'sadness': 3,
+            'surprise': 4,
+        }
 
 
 class SemEval2018EmotionDataset(Dataset):
@@ -65,7 +83,7 @@ class SemEval2018EmotionDataset(Dataset):
 
     def __init__(self, config, phase):
         self.config = config
-        n_labels = len(self.label_index_map.keys())
+        n_labels = len(self.label_index_map)
 
         filepath = os.path.join(config.dataroot, f'{phase}.txt')
         self.texts = []
@@ -89,5 +107,4 @@ class SemEval2018EmotionDataset(Dataset):
 
     def __len__(self):
         return len(self.texts)
-
 
