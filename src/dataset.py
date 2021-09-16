@@ -12,7 +12,7 @@ class TextClassificationDataset(Dataset):
 
         n_labels = len(self.label_index_map)
 
-        filepath = os.path.join(config.dataroot, f'{phase}.txt')
+        filepath = os.path.join(config.dataroot, f'{phase}.tsv')
         self.texts = []
         self.labels = torch.empty(0)
         with io.open(filepath, encoding='utf-8') as f:
@@ -85,7 +85,7 @@ class SemEval2018EmotionDataset(Dataset):
         self.config = config
         n_labels = len(self.label_index_map)
 
-        filepath = os.path.join(config.dataroot, f'{phase}.txt')
+        filepath = os.path.join(config.dataroot, f'{phase}.tsv')
         self.texts = []
         self.labels = torch.empty(0)
         with io.open(filepath, encoding='utf-8') as f:
