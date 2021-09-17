@@ -231,14 +231,15 @@ class Trainer:
 
     def load(self, model_path):
         if not os.path.isfile(model_path):
-            self.config.logger.error(f'model_path: {model_path} is not found')
-            sys.exit()
+            self.config.logger.warning(f'model_path: {model_path} is not found')
+            return
 
         data = torch.load(model_path, map_location=self.config.device_name)
         self.model.load_state_dict(data['model'])
         self.optimizer.load_state_dict(data['optimizer'])
         if self.config.fp16:
             apex.amp.load_state_dict(data['amp'])
+
         self.config.logger.info(f'load model from {model_path}')
 
 
