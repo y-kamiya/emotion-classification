@@ -1,4 +1,5 @@
 torch
+torch_optimizer
 mlflow
 tensorboard
 logzero
