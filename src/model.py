@@ -1,5 +1,5 @@
 from torch import nn
-from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import BertTokenizer, BertForSequenceClassification, T5Tokenizer, RobertaForSequenceClassification
 
 
 class BertModel():
@@ -16,6 +16,24 @@ class BertModel():
             model.classifier = CustomClassificationHead(config, model.config.hidden_size, n_labels)
 
         tokenizer = BertTokenizer.from_pretrained(model_name, padding=True)
+
+        return model.to(config.device), tokenizer
+
+
+class RobertaModel():
+    @classmethod
+    def create(cls, config, n_labels):
+        model_name = 'rinna/japanese-roberta-base'
+
+        model = RobertaForSequenceClassification.from_pretrained(model_name, num_labels=n_labels, return_dict=True)
+        if config.freeze_base_model:
+            for param in model.base_model.parameters():
+                param.requires_grad = False
+
+        if config.custom_head:
+            model.classifier = CustomClassificationHead(config, model.config.hidden_size, n_labels)
+
+        tokenizer = T5Tokenizer.from_pretrained(model_name, padding=True)
 
         return model.to(config.device), tokenizer
 
