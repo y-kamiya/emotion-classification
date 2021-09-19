@@ -7,7 +7,7 @@ import argparse
 import apex
 import torch
 from torch.nn import functional as F
-import torch.optim as optim
+import torch_optimizer as optim
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 import mlflow
@@ -42,8 +42,7 @@ class Trainer:
 
         self.model, self.tokenizer = self.__create_model(config, len(dataset.label_index_map))
 
-        self.optimizer = AdamW(self.model.parameters(), lr=config.lr)
-        self.warmup_scheduler = optim.lr_scheduler.LambdaLR(self.optimizer, lr_lambda=lambda step: min(1.0, (step + 1) / config.warmup_steps))
+        self.optimizer = optim.RAdam(self.model.parameters(), lr=config.lr)
 
         self.writer = SummaryWriter(log_dir=config.tensorboard_log_dir)
         self.best_f1_score = 0.0
@@ -88,11 +87,9 @@ class Trainer:
             self.optimizer.step()
             self.optimizer.zero_grad()
 
-            self.warmup_scheduler.step()
-
             if i % self.config.log_interval == 0:
                 elapsed_time = time.time() - start_time
-                self.config.logger.info('train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}, lr: {:.2e}'.format(epoch, i, loss, elapsed_time, self.warmup_scheduler.get_lr()[0]))
+                self.config.logger.info('train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}'.format(epoch, i, loss, elapsed_time))
 
             self.writer.add_scalar('loss/train', loss, epoch, start_time)
             mlflow.log_metric('loss/train', loss.item(), epoch)
@@ -261,7 +258,6 @@ if __name__ == '__main__':
     parser.add_argument('--name', default=None)
     parser.add_argument('--freeze_base', action='store_true')
     parser.add_argument('--lr', type=float, default=1e-5)
-    parser.add_argument('--warmup_steps', type=int, default=1000)
     parser.add_argument('--multi_labels', action='store_true')
     parser.add_argument('--dataset_class_name', default='EmotionDataset', choices=['EmotionDataset', 'SemEval2018EmotionDataset', 'TextClassificationDataset'])
     parser.add_argument('--custom_head', action='store_true')
