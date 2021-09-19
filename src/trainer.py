@@ -69,7 +69,7 @@ class Trainer:
         position_ids = None
         if self.config.model_type == 'roberta':
             batch_size, token_size = inputs['input_ids'].shape
-            position_ids = torch.arange(token_size).expand((batch_size, -1))
+            position_ids = torch.arange(token_size).expand((batch_size, -1)).to(self.config.device)
 
         if self.config.multi_labels:
             outputs = self.model(**inputs, position_ids=position_ids)
