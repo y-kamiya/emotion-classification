@@ -23,7 +23,7 @@ from tabulate import tabulate
 from tqdm import tqdm
 
 from dataset import EmotionDataset, SemEval2018EmotionDataset, TextClassificationDataset
-from model import BertModel
+from model import BertModel, RobertaModel
 
 
 class Trainer:
@@ -57,15 +57,26 @@ class Trainer:
                 param.requires_grad = False
 
     def __create_model(self, config, n_labels):
-        return BertModel.create(config, n_labels)
+        if config.model_type == 'bert':
+            return BertModel.create(config, n_labels)
+
+        if config.model_type == 'roberta':
+            return RobertaModel.create(config, n_labels)
+
+        assert False, f'model_type: {config.model_type} is not defined'
 
     def forward(self, inputs, labels):
+        position_ids = None
+        if self.config.model_type == 'roberta':
+            batch_size, token_size = inputs['input_ids'].shape
+            position_ids = torch.arange(token_size).expand((batch_size, -1)).to(self.config.device)
+
         if self.config.multi_labels:
-            outputs = self.model(**inputs)
+            outputs = self.model(**inputs, position_ids=position_ids)
             loss = F.binary_cross_entropy_with_logits(outputs.logits, labels)
             return loss, 0 < outputs.logits
 
-        outputs = self.model(**inputs, labels=torch.argmax(labels, dim=1))
+        outputs = self.model(**inputs, labels=torch.argmax(labels, dim=1), position_ids=position_ids)
         return outputs.loss, torch.argmax(outputs.logits, dim=1)
 
     def train(self, epoch):
@@ -260,6 +271,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--multi_labels', action='store_true')
     parser.add_argument('--dataset_class_name', default='EmotionDataset', choices=['EmotionDataset', 'SemEval2018EmotionDataset', 'TextClassificationDataset'])
+    parser.add_argument('--model_type', default='roberta', choices=['bert', 'roberta'])
     parser.add_argument('--custom_head', action='store_true')
     parser.add_argument('--freeze_base_model', action='store_true')
     args = parser.parse_args()
