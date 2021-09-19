@@ -10,3 +10,4 @@ pandas
 matplotlib
 opencv-python
 tabulate
+sentencepiece
