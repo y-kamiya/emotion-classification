@@ -299,6 +299,7 @@ if __name__ == '__main__':
         args.multi_labels = True
 
     logger.info(args)
+    mlflow.set_tracking_uri(f'{args.dataroot}/mlruns')
     mlflow.log_params(vars(args))
 
     trainer = Trainer(args)
