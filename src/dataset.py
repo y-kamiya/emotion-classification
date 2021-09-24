@@ -21,7 +21,7 @@ class TextClassificationDataset(Dataset):
                 text = '' if len(row) == 0 else row[0]
                 label_name = 'none' if len(row) <= 1 else row[1]
                 if label_name not in self.label_index_map and phase != 'predict':
-                    self.config.logger.warning(f'{label_name} is invalid label name, skipped')
+                    self.config.logger.warning(f'{label_name} is invalid label name, skipped. text: {text}')
                     continue
 
                 self.texts.append(text)
