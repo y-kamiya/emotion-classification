@@ -5,10 +5,10 @@ entry_points:
         parameters:
             dataroot: {type: str, default: data/test}
             name: {type: str, default: model}
-        command: 'python trainer.py --dataroot {dataroot} --name {name}'
+        command: 'python src/emotion_classification/trainer.py --dataroot {dataroot} --name {name}'
     predict:
         parameters:
             dataroot: {type: str, default: data/test}
             name: {type: str, default: model}
-        command: 'python trainer.py --predict --dataroot {dataroot} --name {name}'
+        command: 'python src/emotion_classification/trainer.py --predict --dataroot {dataroot} --name {name}'
         
