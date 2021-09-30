@@ -259,6 +259,8 @@ if __name__ == '__main__':
     parser.add_argument('--eval_interval', type=int, default=1)
     parser.add_argument('--n_labels', type=int, default=5, help='number of classes to train')
     parser.add_argument('--dataroot', default='data', help='path to data directory')
+    parser.add_argument('--data_file', default=None, help='file name with data')
+    parser.add_argument('--label_file', default=None, help='file name with labels')
     parser.add_argument('--batch_size', type=int, default=64, help='size of batch')
     parser.add_argument('--epochs', type=int, default=10, help='epoch count')
     parser.add_argument('--fp16', action='store_true', help='run model with float16')

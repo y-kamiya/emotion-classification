@@ -12,7 +12,11 @@ class TextClassificationDataset(Dataset):
 
         n_labels = len(self.label_index_map)
 
-        filepath = os.path.join(config.dataroot, f'{phase}.tsv')
+        data_file = config.data_file
+        if data_file is None:
+            data_file = f'{phase}.tsv'
+
+        filepath = os.path.join(config.dataroot, data_file)
         self.texts = []
         self.labels = torch.empty(0)
         with io.open(filepath, encoding='utf-8') as f:
@@ -37,7 +41,12 @@ class TextClassificationDataset(Dataset):
 
     def create_label_index_map(self):
         label_set = set()
-        filepath = os.path.join(self.config.dataroot, 'labels.txt')
+
+        label_file = self.config.label_file
+        if label_file is None:
+            label_file = 'labels.txt'
+
+        filepath = os.path.join(self.config.dataroot, label_file)
         with io.open(filepath, encoding='utf-8') as f:
             reader = csv.reader(f)
             for row in reader:
