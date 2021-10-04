@@ -42,9 +42,7 @@ class Trainer:
                 data_eval, batch_size=self.config.batch_size, shuffle=False
             )
 
-        self.model, self.tokenizer = self.__create_model(
-            config, len(dataset.label_index_map)
-        )
+        self.model, self.tokenizer = self.__create_model(config, dataset.n_labels)
 
         self.optimizer = optim.RAdam(self.model.parameters(), lr=config.lr)
 

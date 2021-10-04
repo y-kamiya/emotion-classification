@@ -17,7 +17,7 @@ class TextClassificationDataset(BaseDataset):
 
         self.label_index_map = self.create_label_index_map()
 
-        n_labels = len(self.label_index_map)
+        self.n_labels = len(self.label_index_map)
 
         data_file = config.data_file
         if data_file is None:
@@ -39,7 +39,7 @@ class TextClassificationDataset(BaseDataset):
 
                 self.texts.append(text)
 
-                labels = torch.zeros(1, n_labels)
+                labels = torch.zeros(1, self.n_labels)
                 if label_name == "none":
                     assert (
                         self.config.predict
@@ -103,7 +103,7 @@ class SemEval2018EmotionDataset(BaseDataset):
 
     def __init__(self, config, phase):
         self.config = config
-        n_labels = len(self.label_index_map)
+        self.n_labels = len(self.label_index_map)
 
         filepath = os.path.join(config.dataroot, f"{phase}.tsv")
         self.texts = []
@@ -115,7 +115,7 @@ class SemEval2018EmotionDataset(BaseDataset):
                     continue
                 self.texts.append(row[1])
 
-                labels = torch.zeros(1, n_labels)
+                labels = torch.zeros(1, self.n_labels)
                 for i in self.label_index_map.values():
                     column_index = i + 2
                     labels[0][i] = int(row[column_index])

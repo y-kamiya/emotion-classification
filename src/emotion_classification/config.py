@@ -21,7 +21,6 @@ class Config:
     )
     log_interval: int = 1
     eval_interval: int = 1
-    n_labels: int = 5
     dataroot: str = "data"
     data_file: str = None
     label_file: str = None
