@@ -6,12 +6,18 @@ import torch
 from torch.utils.data import Dataset
 
 
-class TextClassificationDataset(Dataset):
+class BaseDataset(Dataset):
     def __init__(self, config, phase):
         self.config = config
+
+
+class TextClassificationDataset(BaseDataset):
+    def __init__(self, config, phase):
+        super(TextClassificationDataset, self).__init__(config, phase)
+
         self.label_index_map = self.create_label_index_map()
 
-        n_labels = len(self.label_index_map)
+        self.n_labels = len(self.label_index_map)
 
         data_file = config.data_file
         if data_file is None:
@@ -33,7 +39,7 @@ class TextClassificationDataset(Dataset):
 
                 self.texts.append(text)
 
-                labels = torch.zeros(1, n_labels)
+                labels = torch.zeros(1, self.n_labels)
                 if label_name == "none":
                     assert (
                         self.config.predict
@@ -80,7 +86,7 @@ class EmotionDataset(TextClassificationDataset):
         }
 
 
-class SemEval2018EmotionDataset(Dataset):
+class SemEval2018EmotionDataset(BaseDataset):
     label_index_map = {
         "anger": 0,
         "anticipation": 1,
@@ -97,7 +103,7 @@ class SemEval2018EmotionDataset(Dataset):
 
     def __init__(self, config, phase):
         self.config = config
-        n_labels = len(self.label_index_map)
+        self.n_labels = len(self.label_index_map)
 
         filepath = os.path.join(config.dataroot, f"{phase}.tsv")
         self.texts = []
@@ -109,7 +115,7 @@ class SemEval2018EmotionDataset(Dataset):
                     continue
                 self.texts.append(row[1])
 
-                labels = torch.zeros(1, n_labels)
+                labels = torch.zeros(1, self.n_labels)
                 for i in self.label_index_map.values():
                     column_index = i + 2
                     labels[0][i] = int(row[column_index])

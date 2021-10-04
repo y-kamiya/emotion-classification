@@ -42,9 +42,7 @@ class Trainer:
                 data_eval, batch_size=self.config.batch_size, shuffle=False
             )
 
-        self.model, self.tokenizer = self.__create_model(
-            config, len(dataset.label_index_map)
-        )
+        self.model, self.tokenizer = self.__create_model(config, dataset.n_labels)
 
         self.optimizer = optim.RAdam(self.model.parameters(), lr=config.lr)
 
@@ -193,6 +191,7 @@ class Trainer:
         label_map[-1] = "none"
         np.set_printoptions(precision=0)
 
+        pred_label_names = []
         output_path = os.path.join(self.config.dataroot, "predict_result")
         with open(output_path, "w") as f:
             for i, (texts, labels) in tqdm(enumerate(self.dataloader_predict)):
@@ -216,8 +215,11 @@ class Trainer:
                     f.write(
                         f"{pred_label_name}\t{prob}\t{true_label_name}\t{texts[j]}\n"
                     )
+                    pred_label_names.append(pred_label_name)
 
         self.config.logger.info(f"write predicted result to {output_path}")
+
+        return pred_label_names
 
     def __log_confusion_matrix(self, all_preds, all_labels, epoch):
         buf = io.BytesIO()
