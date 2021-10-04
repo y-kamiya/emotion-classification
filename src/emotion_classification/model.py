@@ -1,37 +1,54 @@
 from torch import nn
-from transformers import BertTokenizer, BertForSequenceClassification, T5Tokenizer, RobertaForSequenceClassification
+from transformers import (
+    BertForSequenceClassification,
+    BertTokenizer,
+    RobertaForSequenceClassification,
+    T5Tokenizer,
+)
 
 
-class BertModel():
+class BertModel:
     @classmethod
     def create(cls, config, n_labels):
-        model_name = 'cl-tohoku/bert-base-japanese-whole-word-masking' if config.lang == 'ja' else 'bert-base-uncased'
+        model_name = (
+            "cl-tohoku/bert-base-japanese-whole-word-masking"
+            if config.lang == "ja"
+            else "bert-base-uncased"
+        )
 
-        model = BertForSequenceClassification.from_pretrained(model_name, num_labels=n_labels, return_dict=True)
+        model = BertForSequenceClassification.from_pretrained(
+            model_name, num_labels=n_labels, return_dict=True
+        )
         if config.freeze_base_model:
             for param in model.base_model.parameters():
                 param.requires_grad = False
 
         if config.custom_head:
-            model.classifier = CustomClassificationHead(config, model.config.hidden_size, n_labels)
+            model.classifier = CustomClassificationHead(
+                config, model.config.hidden_size, n_labels
+            )
 
         tokenizer = BertTokenizer.from_pretrained(model_name, padding=True)
 
         return model.to(config.device), tokenizer
 
 
-class RobertaModel():
+class RobertaModel:
     @classmethod
     def create(cls, config, n_labels):
-        model_name = 'rinna/japanese-roberta-base'
+        model_name = "rinna/japanese-roberta-base"
 
-        model = RobertaForSequenceClassification.from_pretrained(model_name, num_labels=n_labels, return_dict=True)
+        model = RobertaForSequenceClassification.from_pretrained(
+            model_name, num_labels=n_labels, return_dict=True
+        )
         if config.freeze_base_model:
             for param in model.base_model.parameters():
                 param.requires_grad = False
 
         if config.custom_head:
-            model.classifier = CustomClassificationHead(config, model.config.hidden_size, n_labels)
+            model.classifier = CustomClassificationHead(
+                config, model.config.hidden_size, n_labels
+            )
 
         tokenizer = T5Tokenizer.from_pretrained(model_name, padding=True)
 
@@ -64,5 +81,3 @@ class CustomClassificationHead(nn.Module):
         x = self.prelu2(self.fc2(self.dropout(x)))
         x = self.prelu3(self.fc3(self.dropout(x)))
         return self.fc4(self.dropout(x))
-
-
