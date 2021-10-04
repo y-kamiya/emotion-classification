@@ -11,3 +11,4 @@ matplotlib
 opencv-python
 tabulate
 sentencepiece
+argparse-dataclass

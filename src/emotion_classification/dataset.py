@@ -6,9 +6,15 @@ import torch
 from torch.utils.data import Dataset
 
 
-class TextClassificationDataset(Dataset):
+class BaseDataset(Dataset):
     def __init__(self, config, phase):
         self.config = config
+
+
+class TextClassificationDataset(BaseDataset):
+    def __init__(self, config, phase):
+        super(TextClassificationDataset, self).__init__(config, phase)
+
         self.label_index_map = self.create_label_index_map()
 
         n_labels = len(self.label_index_map)
@@ -80,7 +86,7 @@ class EmotionDataset(TextClassificationDataset):
         }
 
 
-class SemEval2018EmotionDataset(Dataset):
+class SemEval2018EmotionDataset(BaseDataset):
     label_index_map = {
         "anger": 0,
         "anticipation": 1,
