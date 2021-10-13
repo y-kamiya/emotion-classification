@@ -94,9 +94,9 @@ class Trainer:
     def __run_model(self, model, name, X_train, X_eval, y_train, y_eval):
         start = time.time()
         model.fit(X_train, y_train)
-        self.config.logger.log(f"[{name}] {time.time() - start}")
+        print(f"[{name}] {time.time() - start}")
         y_pred = model.predict(X_eval)
-        self.config.logger.log(metrics.classification_report(y_eval, y_pred))
+        print(metrics.classification_report(y_eval, y_pred))
 
     def train(self):
         vectors_train = self.vectorizer.vectorize(self.dataset_train.texts)
@@ -115,7 +115,6 @@ class Trainer:
 
 @dataclass
 class Config:
-    datapath: str = field(default="data/test", metadata=dict(type=str))
     vectorizer_type: str = field(
         default="use", metadata=dict(type=str, choices=["tfidf", "use"])
     )
