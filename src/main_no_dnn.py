@@ -9,9 +9,11 @@ import lightgbm as lgb
 import MeCab
 import tensorflow_hub as hub
 import tensorflow_text
+import torch
 from argparse_dataclass import ArgumentParser
 from sklearn import dummy, ensemble, metrics, neighbors, svm, tree
 from sklearn.feature_extraction.text import TfidfVectorizer
+from transformers import RobertaModel, T5Tokenizer
 
 from emotion_classification.dataset import TextClassificationDataset
 
@@ -59,6 +61,32 @@ class FeatureExtractorUse(FeatureExtractorBase):
         return self.embed(data)
 
 
+class FeatureExtractorRoberta(FeatureExtractorBase):
+    def __init__(self, config):
+        super().__init__(config)
+        self.device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(self.device_name)
+
+        model_name = "rinna/japanese-roberta-base"
+        self.model = RobertaModel.from_pretrained(model_name, return_dict=True)
+        self.tokenizer = T5Tokenizer.from_pretrained(model_name, padding=True)
+
+        self.model.eval()
+
+    @torch.no_grad()
+    def vectorize(self, data):
+        inputs = self.tokenizer(data, return_tensors="pt", padding=True).to(self.device)
+
+        batch_size, token_size = inputs["input_ids"].shape
+        position_ids = (
+            torch.arange(token_size).expand((batch_size, -1)).to(self.device)
+        )
+
+        outputs = self.model(**inputs, position_ids=position_ids)
+
+        return outputs.pooler_output
+
+
 class Trainer:
     def __init__(self, config):
         self.config = config
@@ -73,6 +101,8 @@ class Trainer:
             return FeatureExtractorTfidf(self.config)
         if args.vectorizer_type == "use":
             return FeatureExtractorUse(self.config)
+        if args.vectorizer_type == "roberta":
+            return FeatureExtractorRoberta(self.config)
 
     def __create_models(self, model_type: list[str]):
         n_ens = 100
@@ -116,7 +146,7 @@ class Trainer:
 @dataclass
 class Config:
     vectorizer_type: str = field(
-        default="use", metadata=dict(type=str, choices=["tfidf", "use"])
+        default="use", metadata=dict(type=str, choices=["tfidf", "use", "roberta"])
     )
     dataroot: str = field(default="data/debug", metadata=dict(type=str))
     data_file: str = field(default=None, metadata=dict(type=str))
