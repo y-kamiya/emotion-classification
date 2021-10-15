@@ -14,6 +14,7 @@ from argparse_dataclass import ArgumentParser
 from sklearn import dummy, ensemble, metrics, neighbors, svm, tree
 from sklearn.feature_extraction.text import TfidfVectorizer
 from transformers import RobertaModel, T5Tokenizer
+from imblearn.ensemble import BalancedBaggingClassifier
 
 from emotion_classification.dataset import TextClassificationDataset
 
@@ -133,6 +134,9 @@ class Trainer:
         vectors_eval = self.vectorizer.vectorize(self.dataset_eval.texts)
 
         for (model, name) in self.__create_models([]):
+            if self.config.balanced:
+                model = BalancedBaggingClassifier(base_estimator=model)
+
             self.__run_model(
                 model,
                 name,
@@ -148,6 +152,7 @@ class Config:
     vectorizer_type: str = field(
         default="use", metadata=dict(type=str, choices=["tfidf", "use", "roberta"])
     )
+    balanced: bool = field(default=False, metadata=dict(type=bool))
     dataroot: str = field(default="data/debug", metadata=dict(type=str))
     data_file: str = field(default=None, metadata=dict(type=str))
     label_file: str = field(default=None, metadata=dict(type=str))
