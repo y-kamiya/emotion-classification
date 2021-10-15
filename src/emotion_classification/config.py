@@ -51,7 +51,7 @@ class Config:
     custom_head: bool = False
     freeze_base_model: bool = False
 
-    logger: logging.Logger = logging.getLogger(__name__)
+    logger: logging.Logger = None
     device_name: str = None
     device: str = None
     tensorboard_log_dir: str = None
