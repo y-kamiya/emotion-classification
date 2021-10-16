@@ -1,22 +1,30 @@
 from __future__ import annotations
 
+import os
 import sys
 import time
-from dataclasses import dataclass, field
-from logging import Logger, getLogger
+from enum import Enum, auto
+from dataclasses import dataclass
 
 import lightgbm as lgb
 import MeCab
 import tensorflow_hub as hub
 import tensorflow_text
 import torch
-from argparse_dataclass import ArgumentParser
 from sklearn import dummy, ensemble, metrics, neighbors, svm, tree
 from sklearn.feature_extraction.text import TfidfVectorizer
 from transformers import RobertaModel, T5Tokenizer
 from imblearn.ensemble import BalancedBaggingClassifier
+from omegaconf import OmegaConf
+import hydra
+from hydra.core.config_store import ConfigStore
+from logzero import setup_logger
 
 from emotion_classification.dataset import TextClassificationDataset
+from emotion_classification.config import TrainerConfig
+
+
+logger = setup_logger(__name__)
 
 
 class FeatureExtractorBase:
@@ -54,6 +62,7 @@ class FeatureExtractorTfidf(FeatureExtractorBase):
 class FeatureExtractorUse(FeatureExtractorBase):
     def __init__(self, config):
         super().__init__(config)
+        os.environ['TFHUB_CACHE_DIR'] = "/tmp/tf_cache"
         self.embed = hub.load(
             "https://tfhub.dev/google/universal-sentence-encoder-multilingual/3"
         )
@@ -89,21 +98,24 @@ class FeatureExtractorRoberta(FeatureExtractorBase):
 
 
 class Trainer:
-    def __init__(self, config):
+    def __init__(self, config: Config):
         self.config = config
 
-        self.dataset_train = TextClassificationDataset(config, "train")
-        self.dataset_eval = TextClassificationDataset(config, "eval")
+        self.dataset_train = TextClassificationDataset(config.trainer, "train", logger)
+        self.dataset_eval = TextClassificationDataset(config.trainer, "eval", logger)
 
         self.vectorizer = self.__create_vectorizer(config.vectorizer_type)
 
-    def __create_vectorizer(self, vectorizer_type: str) -> FeatureExtractorBase:
-        if args.vectorizer_type == "tfidf":
+    def __create_vectorizer(self, vectorizer_type: VectorizerType) -> FeatureExtractorBase:
+        type = self.config.vectorizer_type
+
+        if type == VectorizerType.TFIDF:
             return FeatureExtractorTfidf(self.config)
-        if args.vectorizer_type == "use":
-            return FeatureExtractorUse(self.config)
-        if args.vectorizer_type == "roberta":
+
+        if type == VectorizerType.ROBERTA:
             return FeatureExtractorRoberta(self.config)
+
+        return FeatureExtractorUse(self.config)
 
     def __create_models(self, model_type: list[str]):
         n_ens = 100
@@ -147,22 +159,31 @@ class Trainer:
             )
 
 
+class VectorizerType(Enum):
+    TFIDF = auto()
+    USE = auto()
+    ROBERTA = auto()
+
+
 @dataclass
 class Config:
-    vectorizer_type: str = field(
-        default="use", metadata=dict(type=str, choices=["tfidf", "use", "roberta"])
-    )
-    balanced: bool = field(default=False, metadata=dict(type=bool))
-    dataroot: str = field(default="data/debug", metadata=dict(type=str))
-    data_file: str = field(default=None, metadata=dict(type=str))
-    label_file: str = field(default=None, metadata=dict(type=str))
-    logger: Logger = field(default=getLogger(__name__), metadata=dict(type=Logger))
+    vectorizer_type: VectorizerType = VectorizerType.USE
+    balanced: bool = False
+    trainer: TrainerConfig = TrainerConfig()
+
+
+cs = ConfigStore.instance()
+cs.store(name="base_config", node=Config)
+
+
+@hydra.main(config_path=".", config_name="config")
+def main(config: Config):
+    print(OmegaConf.to_yaml(config))
+
+    trainer = Trainer(config)
+    trainer.train()
+    sys.exit()
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser(Config)
-    args = parser.parse_args()
-
-    trainer = Trainer(args)
-    trainer.train()
-    sys.exit()
+    main()

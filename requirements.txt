@@ -11,7 +11,7 @@ matplotlib
 opencv-python
 tabulate
 sentencepiece
-argparse-dataclass
+hydra-core
 mecab-python3
 tensorflow_text>=2.0.0rc0
 lightgbm
