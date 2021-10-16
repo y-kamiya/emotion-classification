@@ -22,7 +22,7 @@ from typing import Optional
 import apex
 
 from .model import BertModel, RobertaModel
-from .config import TrainerConfig
+from .config import TrainerConfig, DatasetType, ModelType
 from .dataset import (
     EmotionDataset,
     SemEval2018EmotionDataset,
@@ -70,23 +70,20 @@ class Trainer:
                 param.requires_grad = False
 
     def __create_dataset(self, config, phase, logger):
-        if config.dataset_class_name == "EmotionDataset":
+        if config.dataset_type == DatasetType.EMOTION:
             return EmotionDataset(config, phase, logger)
 
-        if config.dataset_class_name == "SemEval2018EmotionDataset":
+        if config.dataset_type == DatasetType.SEM_EVAL_2018_EMOTION:
             config.multi_labels = True
             return SemEval2018EmotionDataset(config, phase, logger)
 
         return TextClassificationDataset(config, phase, logger)
 
     def __create_model(self, config, n_labels):
-        if config.model_type == "bert":
+        if config.model_type == ModelType.BERT:
             return BertModel.create(config, n_labels)
 
-        if config.model_type == "roberta":
-            return RobertaModel.create(config, n_labels)
-
-        assert False, f"model_type: {config.model_type} is not defined"
+        return RobertaModel.create(config, n_labels)
 
     def forward(self, inputs, labels):
         position_ids = None

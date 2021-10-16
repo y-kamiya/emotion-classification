@@ -5,6 +5,7 @@ from transformers import (
     RobertaForSequenceClassification,
     T5Tokenizer,
 )
+from .config import Lang
 
 
 class BertModel:
@@ -12,7 +13,7 @@ class BertModel:
     def create(cls, config, n_labels):
         model_name = (
             "cl-tohoku/bert-base-japanese-whole-word-masking"
-            if config.lang == "ja"
+            if config.lang == Lang.JA
             else "bert-base-uncased"
         )
 

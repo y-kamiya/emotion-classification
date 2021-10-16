@@ -3,7 +3,6 @@ import sys
 import mlflow
 import pandas as pd
 import hydra
-from dataclasses import asdict
 from hydra.core.config_store import ConfigStore
 from omegaconf import OmegaConf
 from logzero import setup_logger
@@ -26,7 +25,7 @@ def main(config: TrainerConfig):
     mlflow.set_tracking_uri(f"{config.dataroot}/mlruns")
     mlflow.log_params(OmegaConf.to_container(config))
 
-    logger = setup_logger(name=__name__, level=config.loglevel)
+    logger = setup_logger(name=__name__, level=config.loglevel.name)
 
     trainer = Trainer(config, logger)
 
