@@ -5,6 +5,8 @@ import sys
 import time
 from enum import Enum, auto
 from dataclasses import dataclass
+from abc import ABC, abstractmethod
+from typing import Any
 
 import lightgbm as lgb
 import MeCab
@@ -19,6 +21,7 @@ from omegaconf import OmegaConf
 import hydra
 from hydra.core.config_store import ConfigStore
 from logzero import setup_logger
+import numpy as np
 
 from emotion_classification.dataset import TextClassificationDataset
 from emotion_classification.config import TrainerConfig
@@ -27,13 +30,17 @@ from emotion_classification.config import TrainerConfig
 logger = setup_logger(__name__)
 
 
-class FeatureExtractorBase:
-    def __init__(self, config):
+class FeatureExtractorBase(ABC):
+    def __init__(self, config: Config) -> None:
         self.config = config
+
+    @abstractmethod
+    def vectorize(self, data: list[str]) -> np.array:
+        pass
 
 
 class FeatureExtractorTfidf(FeatureExtractorBase):
-    def __init__(self, config):
+    def __init__(self, config: Config) -> None:
         super().__init__(config)
 
         self.tagger = MeCab.Tagger()
@@ -55,24 +62,24 @@ class FeatureExtractorTfidf(FeatureExtractorBase):
 
         return " ".join(words)
 
-    def vectorize(self, data):
+    def vectorize(self, data: list[str]) -> np.array:
         return self.vectorizer.fit_transform(data)
 
 
 class FeatureExtractorUse(FeatureExtractorBase):
-    def __init__(self, config):
+    def __init__(self, config: Config) -> None:
         super().__init__(config)
         os.environ['TFHUB_CACHE_DIR'] = "/tmp/tf_cache"
         self.embed = hub.load(
             "https://tfhub.dev/google/universal-sentence-encoder-multilingual/3"
         )
 
-    def vectorize(self, data):
+    def vectorize(self, data: list[str]) -> np.array:
         return self.embed(data)
 
 
 class FeatureExtractorRoberta(FeatureExtractorBase):
-    def __init__(self, config):
+    def __init__(self, config: Config) -> None:
         super().__init__(config)
         self.device_name = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(self.device_name)
@@ -84,7 +91,7 @@ class FeatureExtractorRoberta(FeatureExtractorBase):
         self.model.eval()
 
     @torch.no_grad()
-    def vectorize(self, data):
+    def vectorize(self, data: list[str]) -> np.array:
         inputs = self.tokenizer(data, return_tensors="pt", padding=True).to(self.device)
 
         batch_size, token_size = inputs["input_ids"].shape
@@ -98,7 +105,7 @@ class FeatureExtractorRoberta(FeatureExtractorBase):
 
 
 class Trainer:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config) -> None:
         self.config = config
 
         self.dataset_train = TextClassificationDataset(config.trainer, "train", logger)
@@ -117,7 +124,7 @@ class Trainer:
 
         return FeatureExtractorUse(self.config)
 
-    def __create_models(self, model_type: list[str]):
+    def __create_models(self, model_type: list[str]) -> list[Any]:
         n_ens = 100
         return [
             (dummy.DummyClassifier(strategy="stratified"), "dummy"),
@@ -134,14 +141,14 @@ class Trainer:
             (neighbors.KNeighborsClassifier(), "knn"),
         ]
 
-    def __run_model(self, model, name, X_train, X_eval, y_train, y_eval):
+    def __run_model(self, model: Any, name: str, X_train: np.array, X_eval: np.array, y_train: np.array, y_eval: np.array) -> None:
         start = time.time()
         model.fit(X_train, y_train)
         print(f"[{name}] {time.time() - start}")
         y_pred = model.predict(X_eval)
         print(metrics.classification_report(y_eval, y_pred))
 
-    def train(self):
+    def train(self) -> None:
         vectors_train = self.vectorizer.vectorize(self.dataset_train.texts)
         vectors_eval = self.vectorizer.vectorize(self.dataset_eval.texts)
 

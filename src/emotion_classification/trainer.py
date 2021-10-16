@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import os
 import time
@@ -18,12 +20,18 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from logging import Logger, getLogger
 from typing import Optional
+from transformers import (
+    BatchEncoding,
+    PreTrainedModel,
+    PreTrainedTokenizer,
+)
 
 import apex
 
 from .model import BertModel, RobertaModel
 from .config import TrainerConfig, DatasetType, ModelType
 from .dataset import (
+    BaseDataset,
     EmotionDataset,
     SemEval2018EmotionDataset,
     TextClassificationDataset,
@@ -31,27 +39,27 @@ from .dataset import (
 
 
 class Trainer:
-    def __init__(self, config: TrainerConfig, logger: Optional[Logger] = None):
+    def __init__(self, config: TrainerConfig, logger: Optional[Logger] = None) -> None:
         self.config = config
         self.logger = getLogger(__name__) if logger is None else logger
 
         if self.config.predict:
-            dataset = self.__create_dataset(config, "predict", logger)
+            dataset = self.__create_dataset("predict")
             self.dataloader_predict = DataLoader(
                 dataset, batch_size=self.config.batch_size
             )
         else:
-            dataset = self.__create_dataset(config, "train", logger)
+            dataset = self.__create_dataset("train")
             self.dataloader_train = DataLoader(
                 dataset, batch_size=self.config.batch_size, shuffle=True
             )
 
-            data_eval = self.__create_dataset(config, "eval", logger)
+            data_eval = self.__create_dataset("eval")
             self.dataloader_eval = DataLoader(
                 data_eval, batch_size=self.config.batch_size, shuffle=False
             )
 
-        self.model, self.tokenizer = self.__create_model(config, dataset.n_labels)
+        self.model, self.tokenizer = self.__create_model(dataset.n_labels)
 
         self.optimizer = optim.RAdam(self.model.parameters(), lr=config.lr)
 
@@ -69,23 +77,23 @@ class Trainer:
             for param in self.model.base_model.parameters():
                 param.requires_grad = False
 
-    def __create_dataset(self, config, phase, logger):
-        if config.dataset_type == DatasetType.EMOTION:
-            return EmotionDataset(config, phase, logger)
+    def __create_dataset(self, phase: str) -> BaseDataset:
+        if self.config.dataset_type == DatasetType.EMOTION:
+            return EmotionDataset(self.config, phase, self.logger)
 
-        if config.dataset_type == DatasetType.SEM_EVAL_2018_EMOTION:
-            config.multi_labels = True
-            return SemEval2018EmotionDataset(config, phase, logger)
+        if self.config.dataset_type == DatasetType.SEM_EVAL_2018_EMOTION:
+            self.config.multi_labels = True
+            return SemEval2018EmotionDataset(self.config, phase, self.logger)
 
-        return TextClassificationDataset(config, phase, logger)
+        return TextClassificationDataset(self.config, phase, self.logger)
 
-    def __create_model(self, config, n_labels):
-        if config.model_type == ModelType.BERT:
-            return BertModel.create(config, n_labels)
+    def __create_model(self, n_labels: int) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
+        if self.config.model_type == ModelType.BERT:
+            return BertModel.create(self.config, n_labels)
 
-        return RobertaModel.create(config, n_labels)
+        return RobertaModel.create(self.config, n_labels)
 
-    def forward(self, inputs, labels):
+    def forward(self, inputs: BatchEncoding, labels: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         position_ids = None
         if self.config.model_type == "roberta":
             batch_size, token_size = inputs["input_ids"].shape
@@ -103,7 +111,7 @@ class Trainer:
         )
         return outputs.loss, torch.argmax(outputs.logits, dim=1)
 
-    def train(self, epoch):
+    def train(self, epoch: int) -> None:
         self.model.train()
 
         for i, (texts, labels) in enumerate(self.dataloader_train):
@@ -138,7 +146,7 @@ class Trainer:
         self.save(self.config.model_path)
 
     @torch.no_grad()
-    def eval(self, epoch):
+    def eval(self, epoch: int) -> None:
         self.model.eval()
 
         all_labels = torch.empty(0)
@@ -154,7 +162,7 @@ class Trainer:
 
             loss, preds = self.forward(inputs, labels)
 
-            losses.append(loss)
+            losses.append(loss.item())
 
             if not self.config.multi_labels:
                 labels = torch.argmax(labels, dim=1)
@@ -185,7 +193,7 @@ class Trainer:
                 else f1_score["accuracy"]
             )
             macro = f1_score["macro avg"]
-            mlflow.log_metric("loss/eval", average_loss.item(), epoch)
+            mlflow.log_metric("loss/eval", average_loss, epoch)
             mlflow.log_metric("metrics/f1_score_micro", micro, epoch)
             mlflow.log_metric("metrics/f1_score_macro", macro, epoch)
             self.writer.add_scalar("loss/eval", average_loss, epoch, start_time)
@@ -199,7 +207,7 @@ class Trainer:
                 self.save(self.config.best_model_path)
 
     @torch.no_grad()
-    def predict(self):
+    def predict(self) -> list[str]:
         label_map = {
             value: key
             for key, value in self.dataloader_predict.dataset.label_index_map.items()
@@ -237,7 +245,7 @@ class Trainer:
 
         return pred_label_names
 
-    def __log_confusion_matrix(self, all_preds, all_labels, epoch):
+    def __log_confusion_matrix(self, all_preds: torch.Tensor, all_labels: torch.Tensor, epoch: int):
         buf = io.BytesIO()
         dataset = self.dataloader_eval.dataset
         label_map = {value: key for key, value in dataset.label_index_map.items()}
@@ -293,7 +301,7 @@ class Trainer:
         mlflow.log_artifact("confusion.png")
         self.writer.add_image("confusion_maatrix", img, epoch, dataformats="HWC")
 
-    def save(self, model_path):
+    def save(self, model_path: str) -> None:
         if self.config.no_save:
             return
 
@@ -307,7 +315,7 @@ class Trainer:
         torch.save(data, model_path)
         self.logger.info(f"save model to {model_path}")
 
-    def load(self, model_path):
+    def load(self, model_path: str) -> None:
         if not os.path.isfile(model_path):
             self.logger.warning(f"model_path: {model_path} is not found")
             return

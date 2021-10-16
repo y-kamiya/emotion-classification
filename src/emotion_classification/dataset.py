@@ -1,29 +1,41 @@
+from __future__ import annotations
+
 import csv
 import io
 import os
 
 import torch
 from torch.utils.data import Dataset
+from logging import Logger
+
+from .config import TrainerConfig
 
 
 class BaseDataset(Dataset):
-    def __init__(self, config, logger):
+    def __init__(self, config: TrainerConfig, phase: str, logger: Logger) -> None:
         self.config = config
+        self.phase = phase
         self.logger = logger
+
+        self.filepath = os.path.join(config.dataroot, f"{phase}.tsv")
+        self.texts: list[str] = []
+        self.labels = torch.empty(0)
+
+    def __getitem__(self, index) -> tuple[str, int]:
+        return self.texts[index], self.labels[index]
+
+    def __len__(self) -> int:
+        return len(self.texts)
 
 
 class TextClassificationDataset(BaseDataset):
-    def __init__(self, config, phase, logger):
-        super().__init__(config, logger)
+    def __init__(self, config: TrainerConfig, phase: str, logger: Logger) -> None:
+        super().__init__(config, phase, logger)
 
         self.label_index_map = self.create_label_index_map()
         self.n_labels = len(self.label_index_map)
-        data_file = f"{phase}.tsv"
 
-        filepath = os.path.join(config.dataroot, data_file)
-        self.texts = []
-        self.labels = torch.empty(0)
-        with io.open(filepath, encoding="utf-8") as f:
+        with io.open(self.filepath, encoding="utf-8") as f:
             reader = csv.reader(f, delimiter="\t")
             for row in reader:
                 text = "" if len(row) == 0 else row[0]
@@ -47,7 +59,7 @@ class TextClassificationDataset(BaseDataset):
 
                 self.labels = torch.cat([self.labels, labels])
 
-    def create_label_index_map(self):
+    def create_label_index_map(self) -> dict[str, int]:
         label_set = set()
 
         filepath = os.path.join(self.config.dataroot, self.config.label_file)
@@ -59,15 +71,9 @@ class TextClassificationDataset(BaseDataset):
 
         return {label: i for i, label in enumerate(sorted(list(label_set)))}
 
-    def __getitem__(self, index):
-        return self.texts[index], self.labels[index]
-
-    def __len__(self):
-        return len(self.texts)
-
 
 class EmotionDataset(TextClassificationDataset):
-    def __init__(self, config, phase, logger):
+    def __init__(self, config: TrainerConfig, phase: str, logger: Logger) -> None:
         super().__init__(config, phase, logger)
 
     def create_label_index_map(self):
@@ -95,14 +101,11 @@ class SemEval2018EmotionDataset(BaseDataset):
         "trust": 10,
     }
 
-    def __init__(self, config, phase, logger):
-        super().__init__(config, logger)
+    def __init__(self, config: TrainerConfig, phase: str, logger: Logger) -> None:
+        super().__init__(config, phase, logger)
         self.n_labels = len(self.label_index_map)
 
-        filepath = os.path.join(config.dataroot, f"{phase}.tsv")
-        self.texts = []
-        self.labels = torch.empty(0)
-        with io.open(filepath, encoding="utf-8") as f:
+        with io.open(self.filepath, encoding="utf-8") as f:
             reader = csv.reader(f, delimiter="\t")
             for i, row in enumerate(reader):
                 if i == 0:
@@ -115,9 +118,3 @@ class SemEval2018EmotionDataset(BaseDataset):
                     labels[0][i] = int(row[column_index])
 
                 self.labels = torch.cat([self.labels, labels])
-
-    def __getitem__(self, index):
-        return self.texts[index], self.labels[index]
-
-    def __len__(self):
-        return len(self.texts)
