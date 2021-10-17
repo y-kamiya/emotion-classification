@@ -2,6 +2,11 @@
 
 venv*
 data
+runs
+mlruns
+outputs
+.hydra
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

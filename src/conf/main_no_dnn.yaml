@@ -1,0 +1,10 @@
+defaults:
+  - base_config
+  - _self_
+
+hydra:
+  run:
+    dir: .
+
+trainer:
+  dataroot: data/debug

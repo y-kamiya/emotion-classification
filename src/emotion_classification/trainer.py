@@ -16,28 +16,37 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from logging import Logger, getLogger
+from typing import Optional
 
 import apex
 
 from .model import BertModel, RobertaModel
+from .config import TrainerConfig, DatasetType, ModelType
+from .dataset import (
+    EmotionDataset,
+    SemEval2018EmotionDataset,
+    TextClassificationDataset,
+)
 
 
 class Trainer:
-    def __init__(self, config):
+    def __init__(self, config: TrainerConfig, logger: Optional[Logger] = None):
         self.config = config
+        self.logger = getLogger(__name__) if logger is None else logger
 
         if self.config.predict:
-            dataset = self.config.dataset_class(self.config, "predict")
+            dataset = self.__create_dataset(config, "predict", logger)
             self.dataloader_predict = DataLoader(
                 dataset, batch_size=self.config.batch_size
             )
         else:
-            dataset = self.config.dataset_class(self.config, "train")
+            dataset = self.__create_dataset(config, "train", logger)
             self.dataloader_train = DataLoader(
                 dataset, batch_size=self.config.batch_size, shuffle=True
             )
 
-            data_eval = self.config.dataset_class(self.config, "eval")
+            data_eval = self.__create_dataset(config, "eval", logger)
             self.dataloader_eval = DataLoader(
                 data_eval, batch_size=self.config.batch_size, shuffle=False
             )
@@ -60,14 +69,21 @@ class Trainer:
             for param in self.model.base_model.parameters():
                 param.requires_grad = False
 
+    def __create_dataset(self, config, phase, logger):
+        if config.dataset_type == DatasetType.EMOTION:
+            return EmotionDataset(config, phase, logger)
+
+        if config.dataset_type == DatasetType.SEM_EVAL_2018_EMOTION:
+            config.multi_labels = True
+            return SemEval2018EmotionDataset(config, phase, logger)
+
+        return TextClassificationDataset(config, phase, logger)
+
     def __create_model(self, config, n_labels):
-        if config.model_type == "bert":
+        if config.model_type == ModelType.BERT:
             return BertModel.create(config, n_labels)
 
-        if config.model_type == "roberta":
-            return RobertaModel.create(config, n_labels)
-
-        assert False, f"model_type: {config.model_type} is not defined"
+        return RobertaModel.create(config, n_labels)
 
     def forward(self, inputs, labels):
         position_ids = None
@@ -110,7 +126,7 @@ class Trainer:
 
             if i % self.config.log_interval == 0:
                 elapsed_time = time.time() - start_time
-                self.config.logger.info(
+                self.logger.info(
                     "train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}".format(
                         epoch, i, loss, elapsed_time
                     )
@@ -148,7 +164,7 @@ class Trainer:
 
         elapsed_time = time.time() - start_time
         average_loss = sum(losses) / len(losses)
-        self.config.logger.info(
+        self.logger.info(
             "eval epoch: {}, loss: {:.2f}, time: {:.2f}".format(
                 epoch, average_loss, elapsed_time
             )
@@ -217,7 +233,7 @@ class Trainer:
                     )
                     pred_label_names.append(pred_label_name)
 
-        self.config.logger.info(f"write predicted result to {output_path}")
+        self.logger.info(f"write predicted result to {output_path}")
 
         return pred_label_names
 
@@ -289,17 +305,17 @@ class Trainer:
             "fp16": self.config.fp16,
         }
         torch.save(data, model_path)
-        self.config.logger.info(f"save model to {model_path}")
+        self.logger.info(f"save model to {model_path}")
 
     def load(self, model_path):
         if not os.path.isfile(model_path):
-            self.config.logger.warning(f"model_path: {model_path} is not found")
+            self.logger.warning(f"model_path: {model_path} is not found")
             return
 
-        data = torch.load(model_path, map_location=self.config.device_name)
+        data = torch.load(model_path, map_location=self.config.device)
         self.model.load_state_dict(data["model"])
         self.optimizer.load_state_dict(data["optimizer"])
         if self.config.fp16:
             apex.amp.load_state_dict(data["amp"])
 
-        self.config.logger.info(f"load model from {model_path}")
+        self.logger.info(f"load model from {model_path}")

@@ -7,21 +7,18 @@ from torch.utils.data import Dataset
 
 
 class BaseDataset(Dataset):
-    def __init__(self, config, phase):
+    def __init__(self, config, logger):
         self.config = config
+        self.logger = logger
 
 
 class TextClassificationDataset(BaseDataset):
-    def __init__(self, config, phase):
-        super(TextClassificationDataset, self).__init__(config, phase)
+    def __init__(self, config, phase, logger):
+        super().__init__(config, logger)
 
         self.label_index_map = self.create_label_index_map()
-
         self.n_labels = len(self.label_index_map)
-
-        data_file = config.data_file
-        if data_file is None:
-            data_file = f"{phase}.tsv"
+        data_file = f"{phase}.tsv"
 
         filepath = os.path.join(config.dataroot, data_file)
         self.texts = []
@@ -32,7 +29,7 @@ class TextClassificationDataset(BaseDataset):
                 text = "" if len(row) == 0 else row[0]
                 label_name = "none" if len(row) <= 1 else row[1]
                 if label_name not in self.label_index_map and phase != "predict":
-                    self.config.logger.warning(
+                    self.logger.warning(
                         f"{label_name} is invalid label name, skipped. text: {text}"
                     )
                     continue
@@ -53,11 +50,8 @@ class TextClassificationDataset(BaseDataset):
     def create_label_index_map(self):
         label_set = set()
 
-        label_file = self.config.label_file
-        if label_file is None:
-            label_file = "labels.txt"
-
-        filepath = os.path.join(self.config.dataroot, label_file)
+        filepath = os.path.join(self.config.dataroot, self.config.label_file)
+        print(os.path.abspath(filepath))
         with io.open(filepath, encoding="utf-8") as f:
             reader = csv.reader(f)
             for row in reader:
@@ -73,8 +67,8 @@ class TextClassificationDataset(BaseDataset):
 
 
 class EmotionDataset(TextClassificationDataset):
-    def __init__(self, config, phase):
-        super(EmotionDataset, self).__init__(config, phase)
+    def __init__(self, config, phase, logger):
+        super().__init__(config, phase, logger)
 
     def create_label_index_map(self):
         return {
@@ -101,8 +95,8 @@ class SemEval2018EmotionDataset(BaseDataset):
         "trust": 10,
     }
 
-    def __init__(self, config, phase):
-        self.config = config
+    def __init__(self, config, phase, logger):
+        super().__init__(config, logger)
         self.n_labels = len(self.label_index_map)
 
         filepath = os.path.join(config.dataroot, f"{phase}.tsv")
