@@ -176,7 +176,7 @@ cs = ConfigStore.instance()
 cs.store(name="base_config", node=Config)
 
 
-@hydra.main(config_path=".", config_name="config")
+@hydra.main(config_path="conf", config_name="main_no_dnn")
 def main(config: Config):
     print(OmegaConf.to_yaml(config))
 

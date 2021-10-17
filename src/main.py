@@ -15,7 +15,7 @@ cs = ConfigStore.instance()
 cs.store(name="base_config", node=TrainerConfig)
 
 
-@hydra.main(config_path=".", config_name="config")
+@hydra.main(config_path="conf", config_name="main")
 def main(config: TrainerConfig):
     print(OmegaConf.to_yaml(config))
 
