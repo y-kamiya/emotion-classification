@@ -34,7 +34,7 @@ class TrainerConfig:
     loglevel: LogLevel = LogLevel.INFO
     log_interval: int = 1
     eval_interval: int = 1
-    dataroot: str = "data/debug"
+    dataroot: str = "data"
     label_file: str = "labels.txt"
     batch_size: int = 64
     epochs: int = 1
