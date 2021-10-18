@@ -15,13 +15,16 @@ import numpy as np
 import tensorflow_hub as hub
 import tensorflow_text
 import torch
+import pandas as pd
 from hydra.core.config_store import ConfigStore
 from imblearn.ensemble import BalancedBaggingClassifier
 from logzero import setup_logger
 from omegaconf import OmegaConf
 from sklearn import dummy, ensemble, metrics, neighbors, svm, tree
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from transformers import RobertaModel, T5Tokenizer
+from scipy.stats import uniform
 
 from emotion_classification.config import TrainerConfig
 from emotion_classification.dataset import TextClassificationDataset
@@ -123,36 +126,45 @@ class Trainer:
 
         return FeatureExtractorUse(self.config)
 
-    def __create_models(self, model_type: list[str]) -> list[tuple[Any, str]]:
+    def __create_models(self, model_type: list[str]) -> list[tuple[Any, ModelType]]:
         n_ens = 100
         model_type = self.config.model_type
         models = []
 
         if model_type in [ModelType.ALL, ModelType.DUMMY]:
-            models.append((dummy.DummyClassifier(strategy="stratified"), "dummy"))
+            models.append((dummy.DummyClassifier(strategy="stratified"), ModelType.DUMMY))
 
         if model_type in [ModelType.ALL, ModelType.RANDOM_FOREST]:
-            models.append((ensemble.RandomForestClassifier(n_estimators=n_ens), "random forest"))
+            models.append((ensemble.RandomForestClassifier(n_estimators=n_ens), ModelType.RANDOM_FOREST))
 
         if model_type in [ModelType.ALL, ModelType.EXTRA_TREES]:
-            models.append((ensemble.ExtraTreesClassifier(n_estimators=n_ens), "extra tree"))
+            models.append((ensemble.ExtraTreesClassifier(n_estimators=n_ens), ModelType.EXTRA_TREES))
 
         if model_type in [ModelType.ALL, ModelType.LGBM]:
             n_labels = self.dataset_train.n_labels
-            models.append((lgb.LGBMClassifier(objective="multiclass", num_class=n_labels), "lightgbm"))
+            models.append((lgb.LGBMClassifier(objective="multiclass", num_class=n_labels), ModelType.LGBM))
 
         if model_type in [ModelType.ALL, ModelType.SVM]:
-            models.append((svm.SVC(), "svc"))
+            models.append((svm.SVC(), ModelType.SVM))
 
         if model_type in [ModelType.ALL, ModelType.KNN]:
-            models.append((neighbors.KNeighborsClassifier(), "knn"))
+            models.append((neighbors.KNeighborsClassifier(), ModelType.KNN))
 
         return models
+
+    def __create_params_random_search(self, model_type) -> dict[str, Any]:
+        if model_type == ModelType.SVM:
+            return {
+                "C": uniform(1e-3, 1e3),
+                "gamma": uniform(1e-3, 1e3),
+            }
+
+        assert False, f"params for {model_type} is not defined"
 
     def __run_model(
         self,
         model: Any,
-        name: str,
+        model_type: ModelType,
         X_train: np.array,
         X_eval: np.array,
         y_train: np.array,
@@ -160,7 +172,7 @@ class Trainer:
     ) -> None:
         start = time.time()
         model.fit(X_train, y_train)
-        print(f"[{name}] {time.time() - start}")
+        print(f"[{model_type.name}] {time.time() - start}")
         y_pred = model.predict(X_eval)
         print(metrics.classification_report(y_eval, y_pred))
 
@@ -168,18 +180,26 @@ class Trainer:
         vectors_train = self.vectorizer.vectorize(self.dataset_train.texts)
         vectors_eval = self.vectorizer.vectorize(self.dataset_eval.texts)
 
-        for (model, name) in self.__create_models([]):
+        for (model, model_type) in self.__create_models([]):
             if self.config.balanced:
                 model = BalancedBaggingClassifier(base_estimator=model)
 
+            if self.config.search_type == SearchType.RANDOM:
+                params = self.__create_params_random_search(model_type)
+                model = RandomizedSearchCV(model, params)
+
             self.__run_model(
                 model,
-                name,
+                model_type,
                 vectors_train,
                 vectors_eval,
                 self.dataset_train.labels.argmax(axis=1),
                 self.dataset_eval.labels.argmax(axis=1),
             )
+
+            df = pd.DataFrame(model.cv_results_)
+            df.sort_values(by="rank_test_score", inplace=True)
+            print(df[["rank_test_score", "param_C", "param_gamma", "mean_test_score"]])
 
 
 class VectorizerType(Enum):
@@ -198,10 +218,17 @@ class ModelType(Enum):
     KNN = auto()
 
 
+class SearchType(Enum):
+    NONE = auto()
+    GRID = auto()
+    RANDOM = auto()
+
+
 @dataclass
 class Config:
     vectorizer_type: VectorizerType = VectorizerType.USE
-    model_type: ModelType = ModelType.ALL
+    model_type: ModelType = ModelType.SVM
+    search_type: SearchType = SearchType.RANDOM
     balanced: bool = False
     trainer: TrainerConfig = TrainerConfig()
 
@@ -213,6 +240,9 @@ cs.store(name="base_config", node=Config)
 @hydra.main(config_path="conf", config_name="main_no_dnn")
 def main(config: Config):
     print(OmegaConf.to_yaml(config))
+
+    if config.search_type != SearchType.NONE:
+        assert config.model_type != ModelType.ALL, "model_type should not be ALL when search_type is not NONE"
 
     trainer = Trainer(config)
     trainer.train()
