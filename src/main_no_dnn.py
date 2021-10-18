@@ -123,22 +123,31 @@ class Trainer:
 
         return FeatureExtractorUse(self.config)
 
-    def __create_models(self, model_type: list[str]) -> list[Any]:
+    def __create_models(self, model_type: list[str]) -> list[tuple[Any, str]]:
         n_ens = 100
-        return [
-            (dummy.DummyClassifier(strategy="stratified"), "dummy"),
-            (tree.DecisionTreeClassifier(), "decision tree"),
-            (ensemble.RandomForestClassifier(n_estimators=n_ens), "random forest"),
-            (ensemble.ExtraTreesClassifier(n_estimators=n_ens), "extra tree"),
-            (
-                lgb.LGBMClassifier(
-                    objective="multiclass", num_class=self.dataset_train.n_labels
-                ),
-                "lightgbm",
-            ),
-            (svm.SVC(), "svc"),
-            (neighbors.KNeighborsClassifier(), "knn"),
-        ]
+        model_type = self.config.model_type
+        models = []
+
+        if model_type in [ModelType.ALL, ModelType.DUMMY]:
+            models.append((dummy.DummyClassifier(strategy="stratified"), "dummy"))
+
+        if model_type in [ModelType.ALL, ModelType.RANDOM_FOREST]:
+            models.append((ensemble.RandomForestClassifier(n_estimators=n_ens), "random forest"))
+
+        if model_type in [ModelType.ALL, ModelType.EXTRA_TREES]:
+            models.append((ensemble.ExtraTreesClassifier(n_estimators=n_ens), "extra tree"))
+
+        if model_type in [ModelType.ALL, ModelType.LGBM]:
+            n_labels = self.dataset_train.n_labels
+            models.append((lgb.LGBMClassifier(objective="multiclass", num_class=n_labels), "lightgbm"))
+
+        if model_type in [ModelType.ALL, ModelType.SVM]:
+            models.append((svm.SVC(), "svc"))
+
+        if model_type in [ModelType.ALL, ModelType.KNN]:
+            models.append((neighbors.KNeighborsClassifier(), "knn"))
+
+        return models
 
     def __run_model(
         self,
@@ -179,9 +188,20 @@ class VectorizerType(Enum):
     ROBERTA = auto()
 
 
+class ModelType(Enum):
+    ALL = auto()
+    DUMMY = auto()
+    RANDOM_FOREST = auto()
+    EXTRA_TREES = auto()
+    LGBM = auto()
+    SVM = auto()
+    KNN = auto()
+
+
 @dataclass
 class Config:
     vectorizer_type: VectorizerType = VectorizerType.USE
+    model_type: ModelType = ModelType.ALL
     balanced: bool = False
     trainer: TrainerConfig = TrainerConfig()
 
