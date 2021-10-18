@@ -3,29 +3,28 @@ from __future__ import annotations
 import os
 import sys
 import time
-from enum import Enum, auto
-from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Any
 
+import hydra
 import lightgbm as lgb
 import MeCab
+import numpy as np
 import tensorflow_hub as hub
 import tensorflow_text
 import torch
+from hydra.core.config_store import ConfigStore
+from imblearn.ensemble import BalancedBaggingClassifier
+from logzero import setup_logger
+from omegaconf import OmegaConf
 from sklearn import dummy, ensemble, metrics, neighbors, svm, tree
 from sklearn.feature_extraction.text import TfidfVectorizer
 from transformers import RobertaModel, T5Tokenizer
-from imblearn.ensemble import BalancedBaggingClassifier
-from omegaconf import OmegaConf
-import hydra
-from hydra.core.config_store import ConfigStore
-from logzero import setup_logger
-import numpy as np
 
-from emotion_classification.dataset import TextClassificationDataset
 from emotion_classification.config import TrainerConfig
-
+from emotion_classification.dataset import TextClassificationDataset
 
 logger = setup_logger(__name__)
 
@@ -69,7 +68,7 @@ class FeatureExtractorTfidf(FeatureExtractorBase):
 class FeatureExtractorUse(FeatureExtractorBase):
     def __init__(self, config: Config) -> None:
         super().__init__(config)
-        os.environ['TFHUB_CACHE_DIR'] = "/tmp/tf_cache"
+        os.environ["TFHUB_CACHE_DIR"] = "/tmp/tf_cache"
         self.embed = hub.load(
             "https://tfhub.dev/google/universal-sentence-encoder-multilingual/3"
         )
@@ -95,9 +94,7 @@ class FeatureExtractorRoberta(FeatureExtractorBase):
         inputs = self.tokenizer(data, return_tensors="pt", padding=True).to(self.device)
 
         batch_size, token_size = inputs["input_ids"].shape
-        position_ids = (
-            torch.arange(token_size).expand((batch_size, -1)).to(self.device)
-        )
+        position_ids = torch.arange(token_size).expand((batch_size, -1)).to(self.device)
 
         outputs = self.model(**inputs, position_ids=position_ids)
 
@@ -113,7 +110,9 @@ class Trainer:
 
         self.vectorizer = self.__create_vectorizer(config.vectorizer_type)
 
-    def __create_vectorizer(self, vectorizer_type: VectorizerType) -> FeatureExtractorBase:
+    def __create_vectorizer(
+        self, vectorizer_type: VectorizerType
+    ) -> FeatureExtractorBase:
         type = self.config.vectorizer_type
 
         if type == VectorizerType.TFIDF:
@@ -141,7 +140,15 @@ class Trainer:
             (neighbors.KNeighborsClassifier(), "knn"),
         ]
 
-    def __run_model(self, model: Any, name: str, X_train: np.array, X_eval: np.array, y_train: np.array, y_eval: np.array) -> None:
+    def __run_model(
+        self,
+        model: Any,
+        name: str,
+        X_train: np.array,
+        X_eval: np.array,
+        y_train: np.array,
+        y_eval: np.array,
+    ) -> None:
         start = time.time()
         model.fit(X_train, y_train)
         print(f"[{name}] {time.time() - start}")

@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import sys
 
+import hydra
 import mlflow
 import pandas as pd
-import hydra
 from hydra.core.config_store import ConfigStore
-from omegaconf import OmegaConf
 from logzero import setup_logger
+from omegaconf import OmegaConf
 
-from emotion_classification.trainer import Trainer
 from emotion_classification.config import TrainerConfig
-
+from emotion_classification.trainer import Trainer
 
 cs = ConfigStore.instance()
 cs.store(name="base_config", node=TrainerConfig)

@@ -1,27 +1,33 @@
 from __future__ import annotations
 
 from abc import ABC, abstractclassmethod
+
 from torch import nn
 from transformers import (
-    PreTrainedModel,
-    PreTrainedTokenizer,
     BertForSequenceClassification,
     BertTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizer,
     RobertaForSequenceClassification,
     T5Tokenizer,
 )
-from .config import TrainerConfig, Lang
+
+from .config import Lang, TrainerConfig
 
 
 class BaseModel(ABC):
     @abstractclassmethod
-    def create(self, config: TrainerConfig, n_labals: int) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
+    def create(
+        self, config: TrainerConfig, n_labals: int
+    ) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
         pass
 
 
 class BertModel(BaseModel):
     @classmethod
-    def create(cls, config: TrainerConfig, n_labels: int) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
+    def create(
+        cls, config: TrainerConfig, n_labels: int
+    ) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
         model_name = (
             "cl-tohoku/bert-base-japanese-whole-word-masking"
             if config.lang == Lang.JA
@@ -47,7 +53,9 @@ class BertModel(BaseModel):
 
 class RobertaModel(BaseModel):
     @classmethod
-    def create(cls, config: TrainerConfig, n_labels: int) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
+    def create(
+        cls, config: TrainerConfig, n_labels: int
+    ) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
         model_name = "rinna/japanese-roberta-base"
 
         model = RobertaForSequenceClassification.from_pretrained(

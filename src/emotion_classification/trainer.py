@@ -3,6 +3,8 @@ from __future__ import annotations
 import io
 import os
 import time
+from logging import Logger, getLogger
+from typing import Optional
 
 import cv2
 import matplotlib.pyplot as plt
@@ -18,24 +20,18 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from logging import Logger, getLogger
-from typing import Optional
-from transformers import (
-    BatchEncoding,
-    PreTrainedModel,
-    PreTrainedTokenizer,
-)
+from transformers import BatchEncoding, PreTrainedModel, PreTrainedTokenizer
 
 import apex
 
-from .model import BertModel, RobertaModel
-from .config import TrainerConfig, DatasetType, ModelType
+from .config import DatasetType, ModelType, TrainerConfig
 from .dataset import (
     BaseDataset,
     EmotionDataset,
     SemEval2018EmotionDataset,
     TextClassificationDataset,
 )
+from .model import BertModel, RobertaModel
 
 
 class Trainer:
@@ -87,13 +83,17 @@ class Trainer:
 
         return TextClassificationDataset(self.config, phase, self.logger)
 
-    def __create_model(self, n_labels: int) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
+    def __create_model(
+        self, n_labels: int
+    ) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
         if self.config.model_type == ModelType.BERT:
             return BertModel.create(self.config, n_labels)
 
         return RobertaModel.create(self.config, n_labels)
 
-    def forward(self, inputs: BatchEncoding, labels: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, inputs: BatchEncoding, labels: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         position_ids = None
         if self.config.model_type == "roberta":
             batch_size, token_size = inputs["input_ids"].shape
@@ -245,7 +245,9 @@ class Trainer:
 
         return pred_label_names
 
-    def __log_confusion_matrix(self, all_preds: torch.Tensor, all_labels: torch.Tensor, epoch: int):
+    def __log_confusion_matrix(
+        self, all_preds: torch.Tensor, all_labels: torch.Tensor, epoch: int
+    ):
         buf = io.BytesIO()
         dataset = self.dataloader_eval.dataset
         label_map = {value: key for key, value in dataset.label_index_map.items()}

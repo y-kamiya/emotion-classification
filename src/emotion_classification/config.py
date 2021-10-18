@@ -1,7 +1,8 @@
 import uuid
-import torch
 from dataclasses import dataclass
 from enum import Enum, auto
+
+import torch
 
 
 class DatasetType(Enum):

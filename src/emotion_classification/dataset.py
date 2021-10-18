@@ -3,10 +3,10 @@ from __future__ import annotations
 import csv
 import io
 import os
+from logging import Logger
 
 import torch
 from torch.utils.data import Dataset
-from logging import Logger
 
 from .config import TrainerConfig
 
