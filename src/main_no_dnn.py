@@ -37,7 +37,7 @@ class FeatureExtractorBase(ABC):
         self.config = config
 
     @abstractmethod
-    def vectorize(self, data: list[str]) -> np.array:
+    def vectorize(self, dataset: BaseDataset) -> np.array:
         pass
 
 
@@ -64,8 +64,11 @@ class FeatureExtractorTfidf(FeatureExtractorBase):
 
         return " ".join(words)
 
-    def vectorize(self, data: list[str]) -> np.array:
-        return self.vectorizer.fit_transform(data)
+    def vectorize(self, dataset: BaseDataset) -> np.array:
+        if dataset.phase == Phase.TRAIN:
+            return self.vectorizer.fit_transform(dataset.texts)
+
+        return self.vectorizer.transform(dataset.texts)
 
 
 class FeatureExtractorUse(FeatureExtractorBase):
@@ -76,8 +79,8 @@ class FeatureExtractorUse(FeatureExtractorBase):
             "https://tfhub.dev/google/universal-sentence-encoder-multilingual/3"
         )
 
-    def vectorize(self, data: list[str]) -> np.array:
-        return self.embed(data)
+    def vectorize(self, dataset: BaseDataset) -> np.array:
+        return self.embed(dataset.texts).numpy()
 
 
 class FeatureExtractorRoberta(FeatureExtractorBase):
@@ -177,8 +180,8 @@ class Trainer:
         print(metrics.classification_report(y_eval, y_pred))
 
     def train(self) -> None:
-        vectors_train = self.vectorizer.vectorize(self.dataset_train.texts)
-        vectors_eval = self.vectorizer.vectorize(self.dataset_eval.texts)
+        vectors_train = self.vectorizer.vectorize(self.dataset_train)
+        vectors_eval = self.vectorizer.vectorize(self.dataset_eval)
 
         for (model, model_type) in self.__create_models([]):
             if self.config.balanced:
@@ -193,8 +196,8 @@ class Trainer:
                 model_type,
                 vectors_train,
                 vectors_eval,
-                self.dataset_train.labels.argmax(axis=1),
-                self.dataset_eval.labels.argmax(axis=1),
+                self.dataset_train.labels.argmax(axis=1).numpy(),
+                self.dataset_eval.labels.argmax(axis=1).numpy(),
             )
 
             df = pd.DataFrame(model.cv_results_)
