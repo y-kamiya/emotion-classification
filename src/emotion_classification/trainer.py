@@ -26,6 +26,7 @@ import apex
 
 from .config import DatasetType, ModelType, TrainerConfig
 from .dataset import (
+    Phase,
     BaseDataset,
     EmotionDataset,
     SemEval2018EmotionDataset,
@@ -40,17 +41,17 @@ class Trainer:
         self.logger = getLogger(__name__) if logger is None else logger
 
         if self.config.predict:
-            dataset = self.__create_dataset("predict")
+            dataset = self.__create_dataset(Phase.PREDICT)
             self.dataloader_predict = DataLoader(
                 dataset, batch_size=self.config.batch_size
             )
         else:
-            dataset = self.__create_dataset("train")
+            dataset = self.__create_dataset(Phase.TRAIN)
             self.dataloader_train = DataLoader(
                 dataset, batch_size=self.config.batch_size, shuffle=True
             )
 
-            data_eval = self.__create_dataset("eval")
+            data_eval = self.__create_dataset(Phase.EVAL)
             self.dataloader_eval = DataLoader(
                 data_eval, batch_size=self.config.batch_size, shuffle=False
             )

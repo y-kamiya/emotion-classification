@@ -27,7 +27,7 @@ from transformers import RobertaModel, T5Tokenizer
 from scipy.stats import uniform
 
 from emotion_classification.config import TrainerConfig
-from emotion_classification.dataset import TextClassificationDataset
+from emotion_classification.dataset import Phase, BaseDataset, TextClassificationDataset
 
 logger = setup_logger(__name__)
 
@@ -93,23 +93,23 @@ class FeatureExtractorRoberta(FeatureExtractorBase):
         self.model.eval()
 
     @torch.no_grad()
-    def vectorize(self, data: list[str]) -> np.array:
-        inputs = self.tokenizer(data, return_tensors="pt", padding=True).to(self.device)
+    def vectorize(self, dataset: BaseDataset) -> np.array:
+        inputs = self.tokenizer(dataset.texts, return_tensors="pt", padding=True).to(self.device)
 
         batch_size, token_size = inputs["input_ids"].shape
         position_ids = torch.arange(token_size).expand((batch_size, -1)).to(self.device)
 
         outputs = self.model(**inputs, position_ids=position_ids)
 
-        return outputs.pooler_output
+        return outputs.pooler_output.numpy()
 
 
 class Trainer:
     def __init__(self, config: Config) -> None:
         self.config = config
 
-        self.dataset_train = TextClassificationDataset(config.trainer, "train", logger)
-        self.dataset_eval = TextClassificationDataset(config.trainer, "eval", logger)
+        self.dataset_train = TextClassificationDataset(config.trainer, Phase.TRAIN, logger)
+        self.dataset_eval = TextClassificationDataset(config.trainer, Phase.EVAL, logger)
 
         self.vectorizer = self.__create_vectorizer(config.vectorizer_type)
 
