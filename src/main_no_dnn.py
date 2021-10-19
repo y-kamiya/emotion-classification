@@ -268,8 +268,8 @@ class SearchType(Enum):
 @dataclass
 class Config:
     vectorizer_type: VectorizerType = VectorizerType.USE
-    model_type: ModelType = ModelType.SVM
-    search_type: SearchType = SearchType.GRID
+    model_type: ModelType = ModelType.ALL
+    search_type: SearchType = SearchType.NONE
     balanced: bool = False
     trainer: TrainerConfig = TrainerConfig()
 
