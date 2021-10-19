@@ -235,9 +235,12 @@ class Trainer:
                 self.dataset_eval.labels.argmax(axis=1).numpy(),
             )
 
-            df = pd.DataFrame(model.cv_results_)
-            df.sort_values(by="rank_test_score", inplace=True)
-            print(df[["rank_test_score", "param_C", "param_gamma", "mean_test_score"]])
+            if self.config.search_type != SearchType.NONE:
+                df = pd.DataFrame(model.cv_results_)
+                df.sort_values(by="rank_test_score", inplace=True)
+                print(
+                    df[["rank_test_score", "param_C", "param_gamma", "mean_test_score"]]
+                )
 
 
 class VectorizerType(Enum):
