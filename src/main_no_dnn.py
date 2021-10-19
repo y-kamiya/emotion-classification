@@ -155,6 +155,15 @@ class Trainer:
 
         return models
 
+    def __create_params_grid_search(self, model_type) -> dict[str, Any]:
+        if model_type == ModelType.SVM:
+            return {
+                "C": [1e-3, 1e-2, 1e-1, 1, 10, 100, 1000],
+                "gamma": [1e-3, 1e-2, 1e-1, 1, 10, 100, 1000],
+            }
+
+        assert False, f"params for {model_type} is not defined"
+
     def __create_params_random_search(self, model_type) -> dict[str, Any]:
         if model_type == ModelType.SVM:
             return {
@@ -187,7 +196,10 @@ class Trainer:
             if self.config.balanced:
                 model = BalancedBaggingClassifier(base_estimator=model)
 
-            if self.config.search_type == SearchType.RANDOM:
+            if self.config.search_type == SearchType.GRID:
+                params = self.__create_params_grid_search(model_type)
+                model = GridSearchCV(model, params)
+            elif self.config.search_type == SearchType.RANDOM:
                 params = self.__create_params_random_search(model_type)
                 model = RandomizedSearchCV(model, params)
 
@@ -231,7 +243,7 @@ class SearchType(Enum):
 class Config:
     vectorizer_type: VectorizerType = VectorizerType.USE
     model_type: ModelType = ModelType.SVM
-    search_type: SearchType = SearchType.RANDOM
+    search_type: SearchType = SearchType.GRID
     balanced: bool = False
     trainer: TrainerConfig = TrainerConfig()
 
