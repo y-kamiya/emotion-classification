@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+from enum import Enum, auto
 from logging import Logger
 
 import torch
@@ -11,13 +12,19 @@ from torch.utils.data import Dataset
 from .config import TrainerConfig
 
 
+class Phase(Enum):
+    TRAIN = auto()
+    EVAL = auto()
+    PREDICT = auto()
+
+
 class BaseDataset(Dataset):
-    def __init__(self, config: TrainerConfig, phase: str, logger: Logger) -> None:
+    def __init__(self, config: TrainerConfig, phase: Phase, logger: Logger) -> None:
         self.config = config
         self.phase = phase
         self.logger = logger
 
-        self.filepath = os.path.join(config.dataroot, f"{phase}.tsv")
+        self.filepath = os.path.join(config.dataroot, f"{phase.name.lower()}.tsv")
         self.texts: list[str] = []
         self.labels = torch.empty(0)
 
@@ -29,7 +36,7 @@ class BaseDataset(Dataset):
 
 
 class TextClassificationDataset(BaseDataset):
-    def __init__(self, config: TrainerConfig, phase: str, logger: Logger) -> None:
+    def __init__(self, config: TrainerConfig, phase: Phase, logger: Logger) -> None:
         super().__init__(config, phase, logger)
 
         self.label_index_map = self.create_label_index_map()
@@ -40,7 +47,7 @@ class TextClassificationDataset(BaseDataset):
             for row in reader:
                 text = "" if len(row) == 0 else row[0]
                 label_name = "none" if len(row) <= 1 else row[1]
-                if label_name not in self.label_index_map and phase != "predict":
+                if label_name not in self.label_index_map and phase != Phase.PREDICT:
                     self.logger.warning(
                         f"{label_name} is invalid label name, skipped. text: {text}"
                     )
@@ -73,7 +80,7 @@ class TextClassificationDataset(BaseDataset):
 
 
 class EmotionDataset(TextClassificationDataset):
-    def __init__(self, config: TrainerConfig, phase: str, logger: Logger) -> None:
+    def __init__(self, config: TrainerConfig, phase: Phase, logger: Logger) -> None:
         super().__init__(config, phase, logger)
 
     def create_label_index_map(self):
@@ -101,7 +108,7 @@ class SemEval2018EmotionDataset(BaseDataset):
         "trust": 10,
     }
 
-    def __init__(self, config: TrainerConfig, phase: str, logger: Logger) -> None:
+    def __init__(self, config: TrainerConfig, phase: Phase, logger: Logger) -> None:
         super().__init__(config, phase, logger)
         self.n_labels = len(self.label_index_map)
 
