@@ -26,9 +26,9 @@ import apex
 
 from .config import DatasetType, ModelType, TrainerConfig
 from .dataset import (
-    Phase,
     BaseDataset,
     EmotionDataset,
+    Phase,
     SemEval2018EmotionDataset,
     TextClassificationDataset,
 )

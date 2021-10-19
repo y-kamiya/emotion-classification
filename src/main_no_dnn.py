@@ -12,22 +12,22 @@ import hydra
 import lightgbm as lgb
 import MeCab
 import numpy as np
+import pandas as pd
 import tensorflow_hub as hub
 import tensorflow_text
 import torch
-import pandas as pd
 from hydra.core.config_store import ConfigStore
 from imblearn.ensemble import BalancedBaggingClassifier
 from logzero import setup_logger
 from omegaconf import OmegaConf
+from scipy.stats import uniform
 from sklearn import dummy, ensemble, metrics, neighbors, svm, tree
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from transformers import RobertaModel, T5Tokenizer
-from scipy.stats import uniform
 
 from emotion_classification.config import TrainerConfig
-from emotion_classification.dataset import Phase, BaseDataset, TextClassificationDataset
+from emotion_classification.dataset import BaseDataset, Phase, TextClassificationDataset
 
 logger = setup_logger(__name__)
 
@@ -97,7 +97,9 @@ class FeatureExtractorRoberta(FeatureExtractorBase):
 
     @torch.no_grad()
     def vectorize(self, dataset: BaseDataset) -> np.array:
-        inputs = self.tokenizer(dataset.texts, return_tensors="pt", padding=True).to(self.device)
+        inputs = self.tokenizer(dataset.texts, return_tensors="pt", padding=True).to(
+            self.device
+        )
 
         batch_size, token_size = inputs["input_ids"].shape
         position_ids = torch.arange(token_size).expand((batch_size, -1)).to(self.device)
@@ -111,8 +113,12 @@ class Trainer:
     def __init__(self, config: Config) -> None:
         self.config = config
 
-        self.dataset_train = TextClassificationDataset(config.trainer, Phase.TRAIN, logger)
-        self.dataset_eval = TextClassificationDataset(config.trainer, Phase.EVAL, logger)
+        self.dataset_train = TextClassificationDataset(
+            config.trainer, Phase.TRAIN, logger
+        )
+        self.dataset_eval = TextClassificationDataset(
+            config.trainer, Phase.EVAL, logger
+        )
 
         self.vectorizer = self.__create_vectorizer(config.vectorizer_type)
 
@@ -135,17 +141,34 @@ class Trainer:
         models = []
 
         if model_type in [ModelType.ALL, ModelType.DUMMY]:
-            models.append((dummy.DummyClassifier(strategy="stratified"), ModelType.DUMMY))
+            models.append(
+                (dummy.DummyClassifier(strategy="stratified"), ModelType.DUMMY)
+            )
 
         if model_type in [ModelType.ALL, ModelType.RANDOM_FOREST]:
-            models.append((ensemble.RandomForestClassifier(n_estimators=n_ens), ModelType.RANDOM_FOREST))
+            models.append(
+                (
+                    ensemble.RandomForestClassifier(n_estimators=n_ens),
+                    ModelType.RANDOM_FOREST,
+                )
+            )
 
         if model_type in [ModelType.ALL, ModelType.EXTRA_TREES]:
-            models.append((ensemble.ExtraTreesClassifier(n_estimators=n_ens), ModelType.EXTRA_TREES))
+            models.append(
+                (
+                    ensemble.ExtraTreesClassifier(n_estimators=n_ens),
+                    ModelType.EXTRA_TREES,
+                )
+            )
 
         if model_type in [ModelType.ALL, ModelType.LGBM]:
             n_labels = self.dataset_train.n_labels
-            models.append((lgb.LGBMClassifier(objective="multiclass", num_class=n_labels), ModelType.LGBM))
+            models.append(
+                (
+                    lgb.LGBMClassifier(objective="multiclass", num_class=n_labels),
+                    ModelType.LGBM,
+                )
+            )
 
         if model_type in [ModelType.ALL, ModelType.SVM]:
             models.append((svm.SVC(), ModelType.SVM))
@@ -257,7 +280,9 @@ def main(config: Config):
     print(OmegaConf.to_yaml(config))
 
     if config.search_type != SearchType.NONE:
-        assert config.model_type != ModelType.ALL, "model_type should not be ALL when search_type is not NONE"
+        assert (
+            config.model_type != ModelType.ALL
+        ), "model_type should not be ALL when search_type is not NONE"
 
     trainer = Trainer(config)
     trainer.train()
