@@ -4,11 +4,13 @@ import os
 import sys
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Dict
 
 import hydra
+import imblearn
 import lightgbm as lgb
 import MeCab
 import numpy as np
@@ -17,11 +19,10 @@ import tensorflow_hub as hub
 import tensorflow_text
 import torch
 from hydra.core.config_store import ConfigStore
-from imblearn.ensemble import BalancedBaggingClassifier
 from logzero import setup_logger
 from omegaconf import OmegaConf
 from scipy.stats import uniform
-from sklearn import dummy, ensemble, metrics, neighbors, svm, tree
+from sklearn import dummy, ensemble, metrics, neighbors, svm
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from transformers import RobertaModel, T5Tokenizer
@@ -122,6 +123,32 @@ class Trainer:
 
         self.vectorizer = self.__create_vectorizer(config.vectorizer_type)
 
+        if config.sampling:
+            over_sampler = imblearn.over_sampling.SMOTE(
+                random_state=0,
+                sampling_strategy=self.__strategy(config.over_sampling_strategy),
+            )
+            under_sampler = imblearn.under_sampling.RandomUnderSampler(
+                random_state=0,
+                sampling_strategy=self.__strategy(config.under_sampling_strategy),
+            )
+
+            def sampler_func(X, y):
+                logger.info(f"original: {self.__label_counts(y)}")
+                X, y = over_sampler.fit_resample(X, y)
+                logger.info(f"oversampled: {self.__label_counts(y)}")
+                X, y = under_sampler.fit_resample(X, y)
+                logger.info(f"undersampled: {self.__label_counts(y)}")
+                return X, y
+
+            self.sampler = imblearn.FunctionSampler(func=sampler_func)
+
+    def __strategy(self, strategy):
+        if not strategy:
+            return "auto"
+
+        return OmegaConf.to_container(strategy)
+
     def __create_vectorizer(
         self, vectorizer_type: VectorizerType
     ) -> FeatureExtractorBase:
@@ -196,6 +223,9 @@ class Trainer:
 
         assert False, f"params for {model_type} is not defined"
 
+    def __label_counts(self, data):
+        return str(sorted(Counter(data).items()))
+
     def __run_model(
         self,
         model: Any,
@@ -212,12 +242,17 @@ class Trainer:
         print(metrics.classification_report(y_eval, y_pred))
 
     def train(self) -> None:
-        vectors_train = self.vectorizer.vectorize(self.dataset_train)
-        vectors_eval = self.vectorizer.vectorize(self.dataset_eval)
+        X_train = self.vectorizer.vectorize(self.dataset_train)
+        X_eval = self.vectorizer.vectorize(self.dataset_eval)
+        y_train = self.dataset_train.labels.argmax(axis=1).numpy()
+        y_eval = self.dataset_eval.labels.argmax(axis=1).numpy()
+
+        if self.config.sampling:
+            X_train, y_train = self.sampler.fit_resample(X_train, y_train)
 
         for (model, model_type) in self.__create_models([]):
-            if self.config.balanced:
-                model = BalancedBaggingClassifier(base_estimator=model)
+            if self.config.bagging:
+                model = ensemble.BaggingClassifier(base_estimator=model)
 
             if self.config.search_type == SearchType.GRID:
                 params = self.__create_params_grid_search(model_type)
@@ -229,10 +264,10 @@ class Trainer:
             self.__run_model(
                 model,
                 model_type,
-                vectors_train,
-                vectors_eval,
-                self.dataset_train.labels.argmax(axis=1).numpy(),
-                self.dataset_eval.labels.argmax(axis=1).numpy(),
+                X_train,
+                X_eval,
+                y_train,
+                y_eval,
             )
 
             if self.config.search_type != SearchType.NONE:
@@ -268,9 +303,12 @@ class SearchType(Enum):
 @dataclass
 class Config:
     vectorizer_type: VectorizerType = VectorizerType.USE
-    model_type: ModelType = ModelType.ALL
+    model_type: ModelType = ModelType.KNN
     search_type: SearchType = SearchType.NONE
-    balanced: bool = False
+    bagging: bool = False
+    sampling: bool = False
+    over_sampling_strategy: Dict[int, int] = field(default_factory=lambda: {})
+    under_sampling_strategy: Dict[int, int] = field(default_factory=lambda: {})
     trainer: TrainerConfig = TrainerConfig()
 
 
