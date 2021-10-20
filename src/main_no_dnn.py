@@ -18,6 +18,7 @@ import pandas as pd
 import tensorflow_hub as hub
 import tensorflow_text
 import torch
+import sklearn
 from hydra.core.config_store import ConfigStore
 from logzero import setup_logger
 from omegaconf import OmegaConf
@@ -26,6 +27,7 @@ from sklearn import dummy, ensemble, metrics, neighbors, svm
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from transformers import RobertaModel, T5Tokenizer
+from matplotlib import pylab as plt
 
 from emotion_classification.config import TrainerConfig
 from emotion_classification.dataset import BaseDataset, Phase, TextClassificationDataset
@@ -246,6 +248,17 @@ class Trainer:
         X_eval = self.vectorizer.vectorize(self.dataset_eval)
         y_train = self.dataset_train.labels.argmax(axis=1).numpy()
         y_eval = self.dataset_eval.labels.argmax(axis=1).numpy()
+
+
+        X_embedded = sklearn.manifold.TSNE().fit_transform(X_train)
+        f, ax = plt.subplots(1, 1)
+        for i in range(self.dataset_train.n_labels):
+            target = X_embedded[y_train == i]
+            ax.scatter(x=target[:, 0], y=target[:, 1], label=str(i), alpha=0.5)
+        plt.legend(bbox_to_anchor=(1.02, 1), loc='upper left')
+        plt.show()
+        sys.exit()
+
 
         if self.config.sampling:
             X_train, y_train = self.sampler.fit_resample(X_train, y_train)
