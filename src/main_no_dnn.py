@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import hydra
 import imblearn
@@ -25,6 +25,7 @@ from scipy.stats import uniform
 from sklearn import dummy, ensemble, metrics, neighbors, svm
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from tabulate import tabulate
 from transformers import RobertaModel, T5Tokenizer
 
 from emotion_classification.config import TrainerConfig
@@ -254,12 +255,17 @@ class Trainer:
             if self.config.bagging:
                 model = ensemble.BaggingClassifier(base_estimator=model)
 
+            scoring = OmegaConf.to_container(self.config.search_scoring)
             if self.config.search_type == SearchType.GRID:
                 params = self.__create_params_grid_search(model_type)
-                model = GridSearchCV(model, params)
+                model = GridSearchCV(
+                    model, params, n_jobs=8, scoring=scoring, refit=scoring[0]
+                )
             elif self.config.search_type == SearchType.RANDOM:
                 params = self.__create_params_random_search(model_type)
-                model = RandomizedSearchCV(model, params)
+                model = RandomizedSearchCV(
+                    model, params, n_jobs=8, scoring=scoring, refit=scoring[0]
+                )
 
             self.__run_model(
                 model,
@@ -271,11 +277,14 @@ class Trainer:
             )
 
             if self.config.search_type != SearchType.NONE:
-                df = pd.DataFrame(model.cv_results_)
-                df.sort_values(by="rank_test_score", inplace=True)
-                print(
-                    df[["rank_test_score", "param_C", "param_gamma", "mean_test_score"]]
+                keys = sum(
+                    [[f"rank_test_{name}", f"mean_test_{name}"] for name in scoring], []
                 )
+                df = pd.DataFrame(model.cv_results_)
+                df.sort_values(by=keys[0], inplace=True)
+                df = df[keys + ["params"]]
+                df.to_csv("search_output", sep="\t")
+                print(tabulate(df, headers="keys", tablefmt="github", floatfmt=".3f"))
 
 
 class VectorizerType(Enum):
@@ -305,6 +314,7 @@ class Config:
     vectorizer_type: VectorizerType = VectorizerType.USE
     model_type: ModelType = ModelType.KNN
     search_type: SearchType = SearchType.NONE
+    search_scoring: List[str] = field(default_factory=lambda: ["f1_micro", "f1_macro"])
     bagging: bool = False
     sampling: bool = False
     over_sampling_strategy: Dict[int, int] = field(default_factory=lambda: {})
@@ -324,6 +334,9 @@ def main(config: Config):
         assert (
             config.model_type != ModelType.ALL
         ), "model_type should not be ALL when search_type is not NONE"
+
+    pd.options.display.precision = 3
+    pd.options.display.max_columns = 30
 
     trainer = Trainer(config)
     trainer.train()
