@@ -6,6 +6,7 @@ import time
 from logging import Logger, getLogger
 from typing import Optional
 
+
 import cv2
 import matplotlib.pyplot as plt
 import mlflow
@@ -33,6 +34,7 @@ from .dataset import (
     TextClassificationDataset,
 )
 from .model import BertModel, RobertaModel
+from .sampler import SamplerFactory
 
 
 class Trainer:
@@ -47,8 +49,15 @@ class Trainer:
             )
         else:
             dataset = self.__create_dataset(Phase.TRAIN)
+            sampler = SamplerFactory(self.logger).get(
+                class_idxs=dataset.index_list_by_label(),
+                batch_size=config.batch_size,
+                n_batches=int(len(dataset) / config.batch_size),
+                alpha=1.0,
+                kind="random",
+            )
             self.dataloader_train = DataLoader(
-                dataset, batch_size=self.config.batch_size, shuffle=True
+                dataset, batch_sampler=sampler
             )
 
             data_eval = self.__create_dataset(Phase.EVAL)

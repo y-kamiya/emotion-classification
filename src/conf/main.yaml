@@ -2,6 +2,4 @@ defaults:
   - base_config
   - _self_
 
-hydra:
-  run:
-    dir: .
+dataroot: data/debug

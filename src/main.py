@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import os
 
 import hydra
 import mlflow
@@ -18,6 +19,10 @@ cs.store(name="base_config", node=TrainerConfig)
 
 @hydra.main(config_path="conf", config_name="main")
 def main(config: TrainerConfig):
+    dataroot = config.dataroot
+    if not os.path.isabs(dataroot):
+        config.dataroot = os.path.join(hydra.utils.get_original_cwd(), dataroot)
+
     print(OmegaConf.to_yaml(config))
 
     pd.options.display.precision = 3
