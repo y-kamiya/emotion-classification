@@ -209,8 +209,8 @@ class Trainer:
     def __create_params_grid_search(self, model_type) -> dict[str, Any]:
         if model_type == ModelType.SVM:
             return {
-                "C": [1e-3, 1e-2, 1e-1, 1, 10, 100, 1000],
-                "gamma": [1e-3, 1e-2, 1e-1, 1, 10, 100, 1000],
+                "C": [1e-2, 1e-1, 1, 10, 100],
+                "gamma": [1e-2, 1e-1, 1, 10, 100],
             }
 
         assert False, f"params for {model_type} is not defined"
@@ -259,12 +259,12 @@ class Trainer:
             if self.config.search_type == SearchType.GRID:
                 params = self.__create_params_grid_search(model_type)
                 model = GridSearchCV(
-                    model, params, n_jobs=8, scoring=scoring, refit=scoring[0]
+                    model, params, n_jobs=6, scoring=scoring, refit=scoring[0]
                 )
             elif self.config.search_type == SearchType.RANDOM:
                 params = self.__create_params_random_search(model_type)
                 model = RandomizedSearchCV(
-                    model, params, n_jobs=8, scoring=scoring, refit=scoring[0]
+                    model, params, n_jobs=6, scoring=scoring, refit=scoring[0]
                 )
 
             self.__run_model(
