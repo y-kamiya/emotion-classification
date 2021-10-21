@@ -164,7 +164,7 @@ class Trainer:
         return FeatureExtractorUse(self.config)
 
     def __create_models(self, model_type: list[str]) -> list[tuple[Any, ModelType]]:
-        n_ens = 100
+        n_jobs = self.config.n_jobs
         model_type = self.config.model_type
         models = []
 
@@ -176,7 +176,7 @@ class Trainer:
         if model_type in [ModelType.ALL, ModelType.RANDOM_FOREST]:
             models.append(
                 (
-                    ensemble.RandomForestClassifier(n_estimators=n_ens),
+                    ensemble.RandomForestClassifier(n_jobs=n_jobs),
                     ModelType.RANDOM_FOREST,
                 )
             )
@@ -184,7 +184,7 @@ class Trainer:
         if model_type in [ModelType.ALL, ModelType.EXTRA_TREES]:
             models.append(
                 (
-                    ensemble.ExtraTreesClassifier(n_estimators=n_ens),
+                    ensemble.ExtraTreesClassifier(n_jobs=n_jobs),
                     ModelType.EXTRA_TREES,
                 )
             )
@@ -193,7 +193,9 @@ class Trainer:
             n_labels = self.dataset_train.n_labels
             models.append(
                 (
-                    lgb.LGBMClassifier(objective="multiclass", num_class=n_labels),
+                    lgb.LGBMClassifier(
+                        objective="multiclass", num_class=n_labels, n_jobs=n_jobs
+                    ),
                     ModelType.LGBM,
                 )
             )
@@ -202,7 +204,9 @@ class Trainer:
             models.append((svm.SVC(), ModelType.SVM))
 
         if model_type in [ModelType.ALL, ModelType.KNN]:
-            models.append((neighbors.KNeighborsClassifier(), ModelType.KNN))
+            models.append(
+                (neighbors.KNeighborsClassifier(n_jobs=n_jobs), ModelType.KNN)
+            )
 
         return models
 
@@ -256,15 +260,16 @@ class Trainer:
                 model = ensemble.BaggingClassifier(base_estimator=model)
 
             scoring = OmegaConf.to_container(self.config.search_scoring)
+            n_jobs = self.config.n_jobs
             if self.config.search_type == SearchType.GRID:
                 params = self.__create_params_grid_search(model_type)
                 model = GridSearchCV(
-                    model, params, n_jobs=6, scoring=scoring, refit=scoring[0]
+                    model, params, n_jobs=n_jobs, scoring=scoring, refit=scoring[0]
                 )
             elif self.config.search_type == SearchType.RANDOM:
                 params = self.__create_params_random_search(model_type)
                 model = RandomizedSearchCV(
-                    model, params, n_jobs=6, scoring=scoring, refit=scoring[0]
+                    model, params, n_jobs=n_jobs, scoring=scoring, refit=scoring[0]
                 )
 
             self.__run_model(
@@ -319,6 +324,7 @@ class Config:
     sampling: bool = False
     over_sampling_strategy: Dict[int, int] = field(default_factory=lambda: {})
     under_sampling_strategy: Dict[int, int] = field(default_factory=lambda: {})
+    n_jobs: int = 4
     trainer: TrainerConfig = TrainerConfig()
 
 
