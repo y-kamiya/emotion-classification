@@ -217,6 +217,16 @@ class Trainer:
                 "gamma": [1e-2, 1e-1, 1, 10, 100],
             }
 
+        if model_type == ModelType.RANDOM_FOREST:
+            return {
+                "n_estimators": [100, 500, 1000, 5000],
+            }
+
+        if model_type == ModelType.LGBM:
+            return {
+                "learning_rate": [1e-2, 1e-1, 1, 10, 100],
+            }
+
         assert False, f"params for {model_type} is not defined"
 
     def __create_params_random_search(self, model_type) -> dict[str, Any]:
