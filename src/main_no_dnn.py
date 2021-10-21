@@ -4,11 +4,13 @@ import os
 import sys
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any
+from typing import Any, Dict, List
 
 import hydra
+import imblearn
 import lightgbm as lgb
 import MeCab
 import numpy as np
@@ -17,13 +19,13 @@ import tensorflow_hub as hub
 import tensorflow_text
 import torch
 from hydra.core.config_store import ConfigStore
-from imblearn.ensemble import BalancedBaggingClassifier
 from logzero import setup_logger
 from omegaconf import OmegaConf
 from scipy.stats import uniform
-from sklearn import dummy, ensemble, metrics, neighbors, svm, tree
+from sklearn import dummy, ensemble, metrics, neighbors, svm
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
+from tabulate import tabulate
 from transformers import RobertaModel, T5Tokenizer
 
 from emotion_classification.config import TrainerConfig
@@ -122,6 +124,32 @@ class Trainer:
 
         self.vectorizer = self.__create_vectorizer(config.vectorizer_type)
 
+        if config.sampling:
+            over_sampler = imblearn.over_sampling.SMOTE(
+                random_state=0,
+                sampling_strategy=self.__strategy(config.over_sampling_strategy),
+            )
+            under_sampler = imblearn.under_sampling.RandomUnderSampler(
+                random_state=0,
+                sampling_strategy=self.__strategy(config.under_sampling_strategy),
+            )
+
+            def sampler_func(X, y):
+                logger.info(f"original: {self.__label_counts(y)}")
+                X, y = over_sampler.fit_resample(X, y)
+                logger.info(f"oversampled: {self.__label_counts(y)}")
+                X, y = under_sampler.fit_resample(X, y)
+                logger.info(f"undersampled: {self.__label_counts(y)}")
+                return X, y
+
+            self.sampler = imblearn.FunctionSampler(func=sampler_func)
+
+    def __strategy(self, strategy):
+        if not strategy:
+            return "auto"
+
+        return OmegaConf.to_container(strategy)
+
     def __create_vectorizer(
         self, vectorizer_type: VectorizerType
     ) -> FeatureExtractorBase:
@@ -136,7 +164,7 @@ class Trainer:
         return FeatureExtractorUse(self.config)
 
     def __create_models(self, model_type: list[str]) -> list[tuple[Any, ModelType]]:
-        n_ens = 100
+        n_jobs = self.config.n_jobs
         model_type = self.config.model_type
         models = []
 
@@ -148,7 +176,7 @@ class Trainer:
         if model_type in [ModelType.ALL, ModelType.RANDOM_FOREST]:
             models.append(
                 (
-                    ensemble.RandomForestClassifier(n_estimators=n_ens),
+                    ensemble.RandomForestClassifier(n_jobs=n_jobs),
                     ModelType.RANDOM_FOREST,
                 )
             )
@@ -156,7 +184,7 @@ class Trainer:
         if model_type in [ModelType.ALL, ModelType.EXTRA_TREES]:
             models.append(
                 (
-                    ensemble.ExtraTreesClassifier(n_estimators=n_ens),
+                    ensemble.ExtraTreesClassifier(n_jobs=n_jobs),
                     ModelType.EXTRA_TREES,
                 )
             )
@@ -165,7 +193,9 @@ class Trainer:
             n_labels = self.dataset_train.n_labels
             models.append(
                 (
-                    lgb.LGBMClassifier(objective="multiclass", num_class=n_labels),
+                    lgb.LGBMClassifier(
+                        objective="multiclass", num_class=n_labels, n_jobs=n_jobs
+                    ),
                     ModelType.LGBM,
                 )
             )
@@ -174,15 +204,27 @@ class Trainer:
             models.append((svm.SVC(), ModelType.SVM))
 
         if model_type in [ModelType.ALL, ModelType.KNN]:
-            models.append((neighbors.KNeighborsClassifier(), ModelType.KNN))
+            models.append(
+                (neighbors.KNeighborsClassifier(n_jobs=n_jobs), ModelType.KNN)
+            )
 
         return models
 
     def __create_params_grid_search(self, model_type) -> dict[str, Any]:
         if model_type == ModelType.SVM:
             return {
-                "C": [1e-3, 1e-2, 1e-1, 1, 10, 100, 1000],
-                "gamma": [1e-3, 1e-2, 1e-1, 1, 10, 100, 1000],
+                "C": [1e-2, 1e-1, 1, 10, 100],
+                "gamma": [1e-2, 1e-1, 1, 10, 100],
+            }
+
+        if model_type == ModelType.RANDOM_FOREST:
+            return {
+                "n_estimators": [100, 500, 1000, 5000],
+            }
+
+        if model_type == ModelType.LGBM:
+            return {
+                "learning_rate": [1e-2, 1e-1, 1, 10, 100],
             }
 
         assert False, f"params for {model_type} is not defined"
@@ -195,6 +237,9 @@ class Trainer:
             }
 
         assert False, f"params for {model_type} is not defined"
+
+    def __label_counts(self, data):
+        return str(sorted(Counter(data).items()))
 
     def __run_model(
         self,
@@ -212,35 +257,49 @@ class Trainer:
         print(metrics.classification_report(y_eval, y_pred))
 
     def train(self) -> None:
-        vectors_train = self.vectorizer.vectorize(self.dataset_train)
-        vectors_eval = self.vectorizer.vectorize(self.dataset_eval)
+        X_train = self.vectorizer.vectorize(self.dataset_train)
+        X_eval = self.vectorizer.vectorize(self.dataset_eval)
+        y_train = self.dataset_train.labels.argmax(axis=1).numpy()
+        y_eval = self.dataset_eval.labels.argmax(axis=1).numpy()
+
+        if self.config.sampling:
+            X_train, y_train = self.sampler.fit_resample(X_train, y_train)
 
         for (model, model_type) in self.__create_models([]):
-            if self.config.balanced:
-                model = BalancedBaggingClassifier(base_estimator=model)
+            if self.config.bagging:
+                model = ensemble.BaggingClassifier(base_estimator=model)
 
+            scoring = OmegaConf.to_container(self.config.search_scoring)
+            n_jobs = self.config.n_jobs
             if self.config.search_type == SearchType.GRID:
                 params = self.__create_params_grid_search(model_type)
-                model = GridSearchCV(model, params)
+                model = GridSearchCV(
+                    model, params, n_jobs=n_jobs, scoring=scoring, refit=scoring[0]
+                )
             elif self.config.search_type == SearchType.RANDOM:
                 params = self.__create_params_random_search(model_type)
-                model = RandomizedSearchCV(model, params)
+                model = RandomizedSearchCV(
+                    model, params, n_jobs=n_jobs, scoring=scoring, refit=scoring[0]
+                )
 
             self.__run_model(
                 model,
                 model_type,
-                vectors_train,
-                vectors_eval,
-                self.dataset_train.labels.argmax(axis=1).numpy(),
-                self.dataset_eval.labels.argmax(axis=1).numpy(),
+                X_train,
+                X_eval,
+                y_train,
+                y_eval,
             )
 
             if self.config.search_type != SearchType.NONE:
-                df = pd.DataFrame(model.cv_results_)
-                df.sort_values(by="rank_test_score", inplace=True)
-                print(
-                    df[["rank_test_score", "param_C", "param_gamma", "mean_test_score"]]
+                keys = sum(
+                    [[f"rank_test_{name}", f"mean_test_{name}"] for name in scoring], []
                 )
+                df = pd.DataFrame(model.cv_results_)
+                df.sort_values(by=keys[0], inplace=True)
+                df = df[keys + ["params"]]
+                df.to_csv("search_output", sep="\t")
+                print(tabulate(df, headers="keys", tablefmt="github", floatfmt=".3f"))
 
 
 class VectorizerType(Enum):
@@ -268,9 +327,14 @@ class SearchType(Enum):
 @dataclass
 class Config:
     vectorizer_type: VectorizerType = VectorizerType.USE
-    model_type: ModelType = ModelType.ALL
+    model_type: ModelType = ModelType.KNN
     search_type: SearchType = SearchType.NONE
-    balanced: bool = False
+    search_scoring: List[str] = field(default_factory=lambda: ["f1_micro", "f1_macro"])
+    bagging: bool = False
+    sampling: bool = False
+    over_sampling_strategy: Dict[int, int] = field(default_factory=lambda: {})
+    under_sampling_strategy: Dict[int, int] = field(default_factory=lambda: {})
+    n_jobs: int = 4
     trainer: TrainerConfig = TrainerConfig()
 
 
@@ -280,12 +344,19 @@ cs.store(name="base_config", node=Config)
 
 @hydra.main(config_path="conf", config_name="main_no_dnn")
 def main(config: Config):
+    dataroot = config.trainer.dataroot
+    if not os.path.isabs(dataroot):
+        config.trainer.dataroot = os.path.join(hydra.utils.get_original_cwd(), dataroot)
+
     print(OmegaConf.to_yaml(config))
 
     if config.search_type != SearchType.NONE:
         assert (
             config.model_type != ModelType.ALL
         ), "model_type should not be ALL when search_type is not NONE"
+
+    pd.options.display.precision = 3
+    pd.options.display.max_columns = 30
 
     trainer = Trainer(config)
     trainer.train()
