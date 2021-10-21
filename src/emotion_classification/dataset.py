@@ -34,6 +34,18 @@ class BaseDataset(Dataset):
     def __len__(self) -> int:
         return len(self.texts)
 
+    def index_list_by_label(self):
+        label_map = {}
+        for i, label in enumerate(self.labels.argmax(axis=1).numpy()):
+            if label not in label_map:
+                label_map[label] = []
+
+            label_map[label].append(i)
+
+        sorted_map = sorted(label_map.items(), key=lambda x: x[0])
+
+        return [v for _, v in sorted_map]
+
 
 class TextClassificationDataset(BaseDataset):
     def __init__(self, config: TrainerConfig, phase: Phase, logger: Logger) -> None:

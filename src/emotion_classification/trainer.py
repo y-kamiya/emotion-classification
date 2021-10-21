@@ -33,6 +33,7 @@ from .dataset import (
     TextClassificationDataset,
 )
 from .model import BertModel, RobertaModel
+from .sampler import SamplerFactory
 
 
 class Trainer:
@@ -47,9 +48,7 @@ class Trainer:
             )
         else:
             dataset = self.__create_dataset(Phase.TRAIN)
-            self.dataloader_train = DataLoader(
-                dataset, batch_size=self.config.batch_size, shuffle=True
-            )
+            self.dataloader_train = self.__create_dataloader(dataset)
 
             data_eval = self.__create_dataset(Phase.EVAL)
             self.dataloader_eval = DataLoader(
@@ -73,6 +72,22 @@ class Trainer:
         if self.config.freeze_base:
             for param in self.model.base_model.parameters():
                 param.requires_grad = False
+
+    def __create_dataloader(self, dataset):
+        alpha = max(0, min(self.config.sampler_alpha, 1))
+
+        if alpha == 0:
+            return DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True)
+
+        sampler = SamplerFactory(self.logger).get(
+            class_idxs=dataset.index_list_by_label(),
+            batch_size=self.config.batch_size,
+            n_batches=int(len(dataset) / self.config.batch_size),
+            alpha=alpha,
+            kind="random",
+        )
+
+        return DataLoader(dataset, batch_sampler=sampler)
 
     def __create_dataset(self, phase: str) -> BaseDataset:
         if self.config.dataset_type == DatasetType.EMOTION:
