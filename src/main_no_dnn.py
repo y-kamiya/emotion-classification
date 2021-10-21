@@ -344,6 +344,10 @@ cs.store(name="base_config", node=Config)
 
 @hydra.main(config_path="conf", config_name="main_no_dnn")
 def main(config: Config):
+    dataroot = config.trainer.dataroot
+    if not os.path.isabs(dataroot):
+        config.trainer.dataroot = os.path.join(hydra.utils.get_original_cwd(), dataroot)
+
     print(OmegaConf.to_yaml(config))
 
     if config.search_type != SearchType.NONE:
