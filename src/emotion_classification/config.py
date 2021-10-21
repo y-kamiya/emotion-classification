@@ -31,7 +31,7 @@ class LogLevel(Enum):
 
 @dataclass
 class TrainerConfig:
-    cpu: bool = False
+    device: str = "cuda" if torch.cuda.is_available() else "cpu"
     loglevel: LogLevel = LogLevel.INFO
     log_interval: int = 1
     eval_interval: int = 1
@@ -54,7 +54,6 @@ class TrainerConfig:
     freeze_base_model: bool = False
     sampler_alpha: float = 0
 
-    device: str = "cpu" if "${cpu}" or not torch.cuda.is_available() else "cuda"
     tensorboard_log_dir: str = "${dataroot}/runs/${name}"
     model_path: str = "${dataroot}/${name}.pth"
     best_model_path: str = "${dataroot}/${name}.best.pth"
