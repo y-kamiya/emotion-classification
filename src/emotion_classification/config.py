@@ -52,6 +52,7 @@ class TrainerConfig:
     model_type: ModelType = ModelType.ROBERTA
     custom_head: bool = False
     freeze_base_model: bool = False
+    sampler_alpha: float = 0
 
     device: str = "cpu" if "${cpu}" or not torch.cuda.is_available() else "cuda"
     tensorboard_log_dir: str = "${dataroot}/runs/${name}"
