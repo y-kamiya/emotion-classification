@@ -6,7 +6,6 @@ import time
 from logging import Logger, getLogger
 from typing import Optional
 
-
 import cv2
 import matplotlib.pyplot as plt
 import mlflow
@@ -56,9 +55,7 @@ class Trainer:
                 alpha=1.0,
                 kind="random",
             )
-            self.dataloader_train = DataLoader(
-                dataset, batch_sampler=sampler
-            )
+            self.dataloader_train = DataLoader(dataset, batch_sampler=sampler)
 
             data_eval = self.__create_dataset(Phase.EVAL)
             self.dataloader_eval = DataLoader(

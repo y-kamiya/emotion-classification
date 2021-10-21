@@ -32,22 +32,30 @@ class SamplerFactory:
             samples from each class. `Random` will simply sample with replacement according to the
             calculated weights.
         """
-        if kind == 'random':
+        if kind == "random":
             return self.random(class_idxs, batch_size, n_batches, alpha)
-        if kind == 'fixed':
+        if kind == "fixed":
             return self.fixed(class_idxs, batch_size, n_batches, alpha)
-        raise Exception(f'Received kind {kind}, must be `random` or `fixed`')
+        raise Exception(f"Received kind {kind}, must be `random` or `fixed`")
 
     def random(self, class_idxs, batch_size, n_batches, alpha):
-        self.logger.info(f'Creating `{WeightedRandomBatchSampler.__class__.__name__}`...')
+        self.logger.info(
+            f"Creating `{WeightedRandomBatchSampler.__class__.__name__}`..."
+        )
         class_sizes, weights = self._weight_classes(class_idxs, alpha)
         sample_rates = self._sample_rates(weights, class_sizes)
-        return WeightedRandomBatchSampler(sample_rates, class_idxs, batch_size, n_batches)
+        return WeightedRandomBatchSampler(
+            sample_rates, class_idxs, batch_size, n_batches
+        )
 
     def fixed(self, class_idxs, batch_size, n_batches, alpha):
-        self.logger.info(f'Creating `{WeightedFixedBatchSampler.__class__.__name__}`...')
+        self.logger.info(
+            f"Creating `{WeightedFixedBatchSampler.__class__.__name__}`..."
+        )
         class_sizes, weights = self._weight_classes(class_idxs, alpha)
-        class_samples_per_batch = self._fix_batches(weights, class_sizes, batch_size, n_batches)
+        class_samples_per_batch = self._fix_batches(
+            weights, class_sizes, batch_size, n_batches
+        )
         return WeightedFixedBatchSampler(class_samples_per_batch, class_idxs, n_batches)
 
     def _weight_classes(self, class_idxs, alpha):
@@ -58,17 +66,21 @@ class SamplerFactory:
         original_weights = np.asarray([size / n_samples for size in class_sizes])
         uniform_weights = np.repeat(1 / n_classes, n_classes)
 
-        self.logger.info(f'Sample population absolute class sizes: {class_sizes}')
-        self.logger.info(f'Sample population relative class sizes: {original_weights}')
+        self.logger.info(f"Sample population absolute class sizes: {class_sizes}")
+        self.logger.info(f"Sample population relative class sizes: {original_weights}")
 
         weights = self._balance_weights(uniform_weights, original_weights, alpha)
         return class_sizes, weights
 
     def _balance_weights(self, weight_a, weight_b, alpha):
-        assert alpha >= 0 and alpha <= 1, f'invalid alpha {alpha}, must be 0 <= alpha <= 1'
+        assert (
+            alpha >= 0 and alpha <= 1
+        ), f"invalid alpha {alpha}, must be 0 <= alpha <= 1"
         beta = 1 - alpha
         weights = (alpha * weight_a) + (beta * weight_b)
-        self.logger.info(f'Target batch class distribution {weights} using alpha={alpha}')
+        self.logger.info(
+            f"Target batch class distribution {weights} using alpha={alpha}"
+        )
         return weights
 
     def _sample_rates(self, weights, class_sizes):
@@ -89,15 +101,19 @@ class SamplerFactory:
         assert class_samples_per_batch.sum() == batch_size
 
         proportions_of_class_per_batch = class_samples_per_batch / batch_size
-        self.logger.info(f'Rounded batch class distribution {proportions_of_class_per_batch}')
+        self.logger.info(
+            f"Rounded batch class distribution {proportions_of_class_per_batch}"
+        )
 
         proportions_of_samples_per_batch = class_samples_per_batch / class_sizes
 
-        self.logger.info(f'Expecting {class_samples_per_batch} samples of each class per batch, '
-                         f'over {n_batches} batches of size {batch_size}')
+        self.logger.info(
+            f"Expecting {class_samples_per_batch} samples of each class per batch, "
+            f"over {n_batches} batches of size {batch_size}"
+        )
 
         oversample_rates = proportions_of_samples_per_batch * n_batches
-        self.logger.info(f'Sampling rates: {oversample_rates}')
+        self.logger.info(f"Sampling rates: {oversample_rates}")
 
         return class_samples_per_batch
 
@@ -126,7 +142,9 @@ class WeightedRandomBatchSampler(BatchSampler):
         for c, weight in enumerate(class_weights):
             sample_weights.extend([weight] * len(class_idxs[c]))
 
-        self.sampler = WeightedRandomSampler(sample_weights, batch_size, replacement=True)
+        self.sampler = WeightedRandomSampler(
+            sample_weights, batch_size, replacement=True
+        )
         self.n_batches = n_batches
 
     def __iter__(self):
@@ -168,7 +186,7 @@ class WeightedFixedBatchSampler(BatchSampler):
     def _get_batch(self, start_idxs):
         selected = []
         for c, size in enumerate(self.class_samples_per_batch):
-            selected.extend(self.class_idxs[c][start_idxs[c]:start_idxs[c] + size])
+            selected.extend(self.class_idxs[c][start_idxs[c] : start_idxs[c] + size])
         np.random.shuffle(selected)
         return selected
 
@@ -187,6 +205,7 @@ class CircularList:
     """
     Applies modulo function to indexing.
     """
+
     def __init__(self, items):
         self._items = items
         self._mod = len(self._items)
