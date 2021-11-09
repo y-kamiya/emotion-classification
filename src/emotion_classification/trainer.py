@@ -349,10 +349,17 @@ class Trainer:
 
         self.logger.info(f"load model from {model_path}")
 
+    def _can_eval(self, epoch):
+        if epoch % self.config.eval_interval == 0:
+            return True
+
+        if epoch == self.config.epochs - 1:
+            return True
+
+        return False
+
     def main(self):
         for epoch in range(self.start_epoch, self.config.epochs):
             self.train(epoch)
-            if epoch % self.config.eval_interval == 0:
+            if self._can_eval(epoch):
                 self.eval(epoch)
-
-        self.eval(self.config.epochs)
