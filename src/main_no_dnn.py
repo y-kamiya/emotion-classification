@@ -360,7 +360,6 @@ def main(config: Config):
 
     trainer = Trainer(config)
     trainer.train()
-    sys.exit()
 
 
 if __name__ == "__main__":
