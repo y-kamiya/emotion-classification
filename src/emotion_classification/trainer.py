@@ -89,7 +89,7 @@ class Trainer:
 
         return DataLoader(dataset, batch_sampler=sampler)
 
-    def __create_dataset(self, phase: str) -> BaseDataset:
+    def __create_dataset(self, phase: Phase) -> BaseDataset:
         if self.config.dataset_type == DatasetType.EMOTION:
             return EmotionDataset(self.config, phase, self.logger)
 
