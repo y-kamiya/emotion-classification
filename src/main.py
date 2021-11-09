@@ -43,12 +43,7 @@ def main(config: TrainerConfig):
         trainer.predict()
         sys.exit()
 
-    for epoch in range(config.epochs):
-        trainer.train(epoch)
-        if epoch % config.eval_interval == 0:
-            trainer.eval(epoch)
-
-    trainer.eval(epoch)
+    trainer.main()
 
 
 if __name__ == "__main__":
