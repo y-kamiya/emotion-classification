@@ -29,6 +29,7 @@ def main(config: TrainerConfig):
     pd.options.display.max_columns = 30
 
     mlflow.set_tracking_uri(f"{config.dataroot}/mlruns")
+    mlflow.start_run(run_name=config.name)
     mlflow.log_params(OmegaConf.to_container(config))
 
     logger = setup_logger(name=__name__, level=config.loglevel.name)
@@ -43,12 +44,7 @@ def main(config: TrainerConfig):
         trainer.predict()
         sys.exit()
 
-    for epoch in range(config.epochs):
-        trainer.train(epoch)
-        if epoch % config.eval_interval == 0:
-            trainer.eval(epoch)
-
-    trainer.eval(epoch)
+    trainer.main()
 
 
 if __name__ == "__main__":

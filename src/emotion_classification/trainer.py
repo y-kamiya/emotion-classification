@@ -67,6 +67,7 @@ class Trainer:
                 self.model, self.optimizer, "O1"
             )
 
+        self.start_epoch = 0
         self.load(self.config.model_path)
 
         if self.config.freeze_base:
@@ -89,7 +90,7 @@ class Trainer:
 
         return DataLoader(dataset, batch_sampler=sampler)
 
-    def __create_dataset(self, phase: str) -> BaseDataset:
+    def __create_dataset(self, phase: Phase) -> BaseDataset:
         if self.config.dataset_type == DatasetType.EMOTION:
             return EmotionDataset(self.config, phase, self.logger)
 
@@ -159,7 +160,7 @@ class Trainer:
             self.writer.add_scalar("loss/train", loss, epoch, start_time)
             mlflow.log_metric("loss/train", loss.item(), epoch)
 
-        self.save(self.config.model_path)
+        self.save(self.config.model_path, epoch)
 
     @torch.no_grad()
     def eval(self, epoch: int) -> None:
@@ -220,7 +221,7 @@ class Trainer:
 
             if self.best_f1_score < micro:
                 self.best_f1_score = micro
-                self.save(self.config.best_model_path)
+                self.save(self.config.best_model_path, epoch)
 
     @torch.no_grad()
     def predict(self) -> list[str]:
@@ -319,7 +320,7 @@ class Trainer:
         mlflow.log_artifact("confusion.png")
         self.writer.add_image("confusion_maatrix", img, epoch, dataformats="HWC")
 
-    def save(self, model_path: str) -> None:
+    def save(self, model_path: str, epoch: int) -> None:
         if self.config.no_save:
             return
 
@@ -329,6 +330,7 @@ class Trainer:
             "amp": apex.amp.state_dict() if self.config.fp16 else None,
             "batch_size": self.config.batch_size,
             "fp16": self.config.fp16,
+            "last_epoch": epoch,
         }
         torch.save(data, model_path)
         self.logger.info(f"save model to {model_path}")
@@ -341,7 +343,23 @@ class Trainer:
         data = torch.load(model_path, map_location=self.config.device)
         self.model.load_state_dict(data["model"])
         self.optimizer.load_state_dict(data["optimizer"])
+        self.start_epoch = data["last_epoch"] + 1
         if self.config.fp16:
             apex.amp.load_state_dict(data["amp"])
 
         self.logger.info(f"load model from {model_path}")
+
+    def _can_eval(self, epoch):
+        if epoch % self.config.eval_interval == 0:
+            return True
+
+        if epoch == self.config.epochs - 1:
+            return True
+
+        return False
+
+    def main(self):
+        for epoch in range(self.start_epoch, self.config.epochs):
+            self.train(epoch)
+            if self._can_eval(epoch):
+                self.eval(epoch)
