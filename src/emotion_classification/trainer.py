@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pycm
 import torch
-import torch.optim as optim
+import torch_optimizer
 from sklearn import metrics
 from tabulate import tabulate
 from torch.nn import functional as F
@@ -24,7 +24,7 @@ from transformers import BatchEncoding, PreTrainedModel, PreTrainedTokenizer, Ad
 
 import apex
 
-from .config import DatasetType, ModelType, TrainerConfig
+from .config import DatasetType, ModelType, TrainerConfig, OptimizerType
 from .dataset import (
     BaseDataset,
     EmotionDataset,
@@ -58,11 +58,14 @@ class Trainer:
         self.model, self.tokenizer = self.__create_model(dataset.n_labels)
 
         self.optimizer = self.__create_optimizer(self.model)
-        self.scheduler = get_linear_schedule_with_warmup(
-            optimizer=self.optimizer,
-            num_warmup_steps=self.config.warmup_steps,
-            num_training_steps=int(len(dataset) / self.config.batch_size * self.config.epochs),
-        )
+
+        self.scheduler = None
+        if config.optimizer_type != OptimizerType.RADAM:
+            self.scheduler = get_linear_schedule_with_warmup(
+                optimizer=self.optimizer,
+                num_warmup_steps=self.config.warmup_steps,
+                num_training_steps=int(len(dataset) / self.config.batch_size * self.config.epochs),
+            )
 
         self.writer = SummaryWriter(log_dir=config.tensorboard_log_dir)
         self.best_f1_score = 0.0
@@ -108,7 +111,10 @@ class Trainer:
                                        "weight_decay": weight_decay,
                                        "lr": lr})    
 
-        return AdamW(opt_parameters, lr=init_lr)
+        if self.config.optimizer_type != OptimizerType.RADAM:
+            return AdamW(opt_parameters, lr=init_lr)
+
+        return torch_optimizer.RAdam(opt_parameters, lr=init_lr)
 
     def __create_dataloader(self, dataset):
         alpha = max(0, min(self.config.sampler_alpha, 1))
@@ -185,13 +191,14 @@ class Trainer:
             self.optimizer.step()
             self.optimizer.zero_grad()
 
-            self.scheduler.step()
+            if self.scheduler is not None:
+                self.scheduler.step()
 
             if i % self.config.log_interval == 0:
                 elapsed_time = time.time() - start_time
                 self.logger.info(
-                    "train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}, lr: {:.2e}".format(
-                        epoch, i, loss, elapsed_time, self.scheduler.get_lr()[0]
+                    "train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}".format(
+                        epoch, i, loss, elapsed_time
                     )
                 )
 

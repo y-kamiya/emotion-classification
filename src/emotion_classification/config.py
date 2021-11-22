@@ -29,6 +29,11 @@ class LogLevel(Enum):
     CRITICAL = auto()
 
 
+class OptimizerType(Enum):
+    RADAM = auto()
+    ADAMW = auto()
+
+
 @dataclass
 class TrainerConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -40,6 +45,7 @@ class TrainerConfig:
     batch_size: int = 64
     epochs: int = 1
     warmup_steps: int = 1000
+    optimizer_type: OptimizerType = OptimizerType.RADAM
     fp16: bool = False
     lang: Lang = Lang.JA
     eval_only: bool = False
