@@ -20,7 +20,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import BatchEncoding, PreTrainedModel, PreTrainedTokenizer
+from transformers import BatchEncoding, PreTrainedModel, PreTrainedTokenizer, AdamW
 
 import apex
 
@@ -57,7 +57,7 @@ class Trainer:
 
         self.model, self.tokenizer = self.__create_model(dataset.n_labels)
 
-        self.optimizer = optim.RAdam(self.model.parameters(), lr=config.lr)
+        self.optimizer = self.__create_optimizer(self.model)
 
         self.writer = SummaryWriter(log_dir=config.tensorboard_log_dir)
         self.best_f1_score = 0.0
@@ -73,6 +73,43 @@ class Trainer:
         if self.config.freeze_base:
             for param in self.model.base_model.parameters():
                 param.requires_grad = False
+
+    def __create_optimizer(self, model):
+        opt_parameters = []
+        named_parameters = list(model.named_parameters()) 
+        
+        no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
+        set_2 = ["layer.4", "layer.5", "layer.6", "layer.7"]
+        set_3 = ["layer.8", "layer.9", "layer.10", "layer.11"]
+        init_lr = 1e-6
+        
+        for i, (name, params) in enumerate(named_parameters):  
+            
+            weight_decay = 0.0 if any(p in name for p in no_decay) else 0.01
+     
+            if name.startswith("roberta_model.embeddings") or name.startswith("roberta_model.encoder"):            
+                # For first set, set lr to 1e-6 (i.e. 0.000001)
+                lr = init_lr       
+                
+                # For set_2, increase lr to 0.00000175
+                lr = init_lr * 1.75 if any(p in name for p in set_2) else lr
+                
+                # For set_3, increase lr to 0.0000035 
+                lr = init_lr * 3.5 if any(p in name for p in set_3) else lr
+                
+                opt_parameters.append({"params": params,
+                                       "weight_decay": weight_decay,
+                                       "lr": lr})  
+                
+            # For regressor and pooler, set lr to 0.0000036 (slightly higher than the top layer).                
+            if name.startswith("regressor") or name.startswith("roberta_model.pooler"):               
+                lr = init_lr * 3.6 
+                
+                opt_parameters.append({"params": params,
+                                       "weight_decay": weight_decay,
+                                       "lr": lr})    
+
+        return AdamW(self.model.parameters(), lr=self.config.lr)
 
     def __create_dataloader(self, dataset):
         alpha = max(0, min(self.config.sampler_alpha, 1))
