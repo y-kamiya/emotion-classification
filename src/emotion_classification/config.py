@@ -39,6 +39,7 @@ class TrainerConfig:
     label_file: str = "labels.txt"
     batch_size: int = 64
     epochs: int = 1
+    warmup_steps: int = 1000
     fp16: bool = False
     lang: Lang = Lang.JA
     eval_only: bool = False
