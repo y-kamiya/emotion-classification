@@ -175,10 +175,6 @@ class Trainer:
 
         for i, (texts, labels) in enumerate(self.dataloader_train):
             start_time = time.time()
-
-            if self.config.model_type == ModelType.ROBERTA:
-                texts = [f"[CLS]{text}" for text in texts]
-
             inputs = self.tokenizer(texts, return_tensors="pt", padding=True).to(
                 self.config.device
             )
