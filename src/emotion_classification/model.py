@@ -75,6 +75,7 @@ class RobertaModel(BaseModel):
             )
 
         tokenizer = T5Tokenizer.from_pretrained(model_name, padding=True)
+        tokenizer.do_lower_case = True
 
         cls._reinit(config, model)
 
