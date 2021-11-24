@@ -60,6 +60,7 @@ class TrainerConfig:
     custom_head: bool = False
     freeze_base_model: bool = False
     sampler_alpha: float = 0
+    reinit_n_layers: int = 5
 
     tensorboard_log_dir: str = "${dataroot}/runs/${name}"
     model_path: str = "${dataroot}/${name}.pth"
