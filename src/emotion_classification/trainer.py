@@ -270,12 +270,13 @@ class Trainer:
 
     @torch.no_grad()
     def predict(self) -> list[str]:
+        np.set_printoptions(formatter={"float": "{:.0f}".format})
+
         label_map = {
             value: key
             for key, value in self.dataloader_predict.dataset.label_index_map.items()
         }
         label_map[-1] = "none"
-        np.set_printoptions(precision=0)
 
         pred_label_names = []
         output_path = os.path.join(self.config.dataroot, "predict_result")
