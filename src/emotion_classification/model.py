@@ -52,6 +52,8 @@ class BertModel(BaseModel):
 
 
 class RobertaModel(BaseModel):
+    initializer_range = None
+
     @classmethod
     def create(
         cls, config: TrainerConfig, n_labels: int
@@ -61,6 +63,8 @@ class RobertaModel(BaseModel):
         model = RobertaForSequenceClassification.from_pretrained(
             model_name, num_labels=n_labels, return_dict=True
         )
+        cls.initializer_range = model.config.initializer_range
+
         if config.freeze_base_model:
             for param in model.base_model.parameters():
                 param.requires_grad = False
@@ -71,8 +75,31 @@ class RobertaModel(BaseModel):
             )
 
         tokenizer = T5Tokenizer.from_pretrained(model_name, padding=True)
+        tokenizer.do_lower_case = True
+
+        cls._reinit(config, model)
 
         return model.to(config.device), tokenizer
+
+    @classmethod
+    def _reinit(cls, config, model):
+        model.classifier.dense.weight.data.normal_(mean=0.0, std=cls.initializer_range)
+        model.classifier.dense.bias.data.zero_()
+        for param in model.classifier.parameters():
+            param.requires_grad = True
+
+        for n in range(config.reinit_n_layers):
+            model.roberta.encoder.layer[-(n+1)].apply(cls._init_weight_and_bias)
+
+    @classmethod
+    def _init_weight_and_bias(cls, module):
+        if isinstance(module, nn.Linear):
+            module.weight.data.normal_(mean=0.0, std=cls.initializer_range)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
 
 
 class CustomClassificationHead(nn.Module):

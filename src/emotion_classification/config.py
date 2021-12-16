@@ -29,6 +29,11 @@ class LogLevel(Enum):
     CRITICAL = auto()
 
 
+class OptimizerType(Enum):
+    RADAM = auto()
+    ADAMW = auto()
+
+
 @dataclass
 class TrainerConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
@@ -39,6 +44,8 @@ class TrainerConfig:
     label_file: str = "labels.txt"
     batch_size: int = 64
     epochs: int = 1
+    warmup_steps: int = 1000
+    optimizer_type: OptimizerType = OptimizerType.RADAM
     fp16: bool = False
     lang: Lang = Lang.JA
     eval_only: bool = False
@@ -53,6 +60,7 @@ class TrainerConfig:
     custom_head: bool = False
     freeze_base_model: bool = False
     sampler_alpha: float = 0
+    reinit_n_layers: int = 5
 
     tensorboard_log_dir: str = "${dataroot}/runs/${name}"
     model_path: str = "${dataroot}/${name}.pth"

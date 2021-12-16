@@ -13,18 +13,18 @@ import numpy as np
 import pandas as pd
 import pycm
 import torch
-import torch_optimizer as optim
+import torch_optimizer
 from sklearn import metrics
 from tabulate import tabulate
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import BatchEncoding, PreTrainedModel, PreTrainedTokenizer
+from transformers import BatchEncoding, PreTrainedModel, PreTrainedTokenizer, AdamW, get_linear_schedule_with_warmup
 
 import apex
 
-from .config import DatasetType, ModelType, TrainerConfig
+from .config import DatasetType, ModelType, TrainerConfig, OptimizerType
 from .dataset import (
     BaseDataset,
     EmotionDataset,
@@ -57,7 +57,15 @@ class Trainer:
 
         self.model, self.tokenizer = self.__create_model(dataset.n_labels)
 
-        self.optimizer = optim.RAdam(self.model.parameters(), lr=config.lr)
+        self.optimizer = self.__create_optimizer(self.model)
+
+        self.scheduler = None
+        if config.optimizer_type != OptimizerType.RADAM:
+            self.scheduler = get_linear_schedule_with_warmup(
+                optimizer=self.optimizer,
+                num_warmup_steps=self.config.warmup_steps,
+                num_training_steps=int(len(dataset) / self.config.batch_size * self.config.epochs),
+            )
 
         self.writer = SummaryWriter(log_dir=config.tensorboard_log_dir)
         self.best_f1_score = 0.0
@@ -73,6 +81,40 @@ class Trainer:
         if self.config.freeze_base:
             for param in self.model.base_model.parameters():
                 param.requires_grad = False
+
+    def __create_optimizer(self, model):
+        opt_parameters = []
+        named_parameters = list(model.named_parameters()) 
+        
+        no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
+        set_2 = ["layer.4", "layer.5", "layer.6", "layer.7"]
+        set_3 = ["layer.8", "layer.9", "layer.10", "layer.11"]
+        init_lr = self.config.lr
+        
+        for i, (name, params) in enumerate(named_parameters):  
+            
+            weight_decay = 0.0 if any(p in name for p in no_decay) else 0.01
+     
+            if name.startswith("roberta.embeddings") or name.startswith("roberta.encoder"):            
+                lr = init_lr       
+                lr = init_lr * 1.75 if any(p in name for p in set_2) else lr
+                lr = init_lr * 3.5 if any(p in name for p in set_3) else lr
+                
+                opt_parameters.append({"params": params,
+                                       "weight_decay": weight_decay,
+                                       "lr": lr})  
+                
+            if name.startswith("classifier"):
+                lr = init_lr * 3.6 
+                
+                opt_parameters.append({"params": params,
+                                       "weight_decay": weight_decay,
+                                       "lr": lr})    
+
+        if self.config.optimizer_type != OptimizerType.RADAM:
+            return AdamW(opt_parameters, lr=init_lr)
+
+        return torch_optimizer.RAdam(opt_parameters, lr=init_lr)
 
     def __create_dataloader(self, dataset):
         alpha = max(0, min(self.config.sampler_alpha, 1))
@@ -148,6 +190,9 @@ class Trainer:
 
             self.optimizer.step()
             self.optimizer.zero_grad()
+
+            if self.scheduler is not None:
+                self.scheduler.step()
 
             if i % self.config.log_interval == 0:
                 elapsed_time = time.time() - start_time
@@ -225,12 +270,13 @@ class Trainer:
 
     @torch.no_grad()
     def predict(self) -> list[str]:
+        np.set_printoptions(formatter={"float": "{:.0f}".format})
+
         label_map = {
             value: key
             for key, value in self.dataloader_predict.dataset.label_index_map.items()
         }
         label_map[-1] = "none"
-        np.set_printoptions(precision=0)
 
         pred_label_names = []
         output_path = os.path.join(self.config.dataroot, "predict_result")
