@@ -152,7 +152,7 @@ class Trainer:
 
     def forward(
         self, inputs: BatchEncoding, labels: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, tuple[torch.Tensor]]:
         position_ids = None
         if self.config.model_type == "roberta":
             batch_size, token_size = inputs["input_ids"].shape
@@ -161,14 +161,14 @@ class Trainer:
             )
 
         if self.config.multi_labels:
-            outputs = self.model(**inputs, position_ids=position_ids)
+            outputs = self.model(**inputs, position_ids=position_ids, output_attentions=True)
             loss = F.binary_cross_entropy_with_logits(outputs.logits, labels)
-            return loss, 0 < outputs.logits
+            return loss, 0 < outputs.logits, outputs.attentions
 
         outputs = self.model(
-            **inputs, labels=torch.argmax(labels, dim=1), position_ids=position_ids
+            **inputs, labels=torch.argmax(labels, dim=1), position_ids=position_ids, output_attentions=True
         )
-        return outputs.loss, torch.argmax(outputs.logits, dim=1)
+        return outputs.loss, torch.argmax(outputs.logits, dim=1), outputs.attentions
 
     def train(self, epoch: int) -> None:
         self.model.train()
@@ -180,7 +180,7 @@ class Trainer:
             )
             labels = labels.to(self.config.device)
 
-            loss, _ = self.forward(inputs, labels)
+            loss, _, _ = self.forward(inputs, labels)
 
             if self.config.fp16:
                 with apex.amp.scale_loss(loss, self.optimizer) as scaled_loss:
@@ -307,6 +307,40 @@ class Trainer:
         self.logger.info(f"write predicted result to {output_path}")
 
         return pred_label_names
+
+    @torch.no_grad()
+    def visualize(self) -> None:
+        import sys
+        for i, (texts, labels) in enumerate(self.dataloader_eval):
+            inputs = self.tokenizer(texts, return_tensors="pt", padding=True).to(
+                self.config.device
+            )
+            labels = labels.to(self.config.device)
+
+            _, preds, attentions = self.forward(inputs, labels)
+            attns = torch.sum(attentions[-1], 1)
+
+            htmls = []
+            for ids, attn in zip(inputs.input_ids, attns):
+                htmls.append(self._create_html(ids, attn[0]))
+
+            with open("/tmp/test.html", "w") as f:
+                f.write("\n".join(htmls))
+
+            sys.exit()
+
+    def _create_html(self, ids, attn_cls):
+        html = ""
+        tokens = self.tokenizer.convert_ids_to_tokens(ids)
+        print(tokens)
+        print(attn_cls)
+        for token, attn in zip(tokens, attn_cls):
+            if token == "</s>":
+                break
+            color = "#%02X%02X%02X" % (255, int(255*(1 - attn)), int(255*(1 - attn)))
+            html += f"<span style=\"background-color: {color}\">{token}</span>"
+        html += "<br>"
+        return html
 
     def __log_confusion_matrix(
         self, all_preds: torch.Tensor, all_labels: torch.Tensor, epoch: int

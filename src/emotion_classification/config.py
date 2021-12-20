@@ -50,6 +50,7 @@ class TrainerConfig:
     lang: Lang = Lang.JA
     eval_only: bool = False
     predict: bool = False
+    visualize: bool = False
     no_save: bool = False
     name: str = str(uuid.uuid4())[:8]
     freeze_base: bool = False

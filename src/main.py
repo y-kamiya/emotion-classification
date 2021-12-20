@@ -10,7 +10,7 @@ from hydra.core.config_store import ConfigStore
 from logzero import setup_logger
 from omegaconf import OmegaConf
 
-from emotion_classification.config import TrainerConfig
+from emotion_classification.config import TrainerConfig, DatasetType
 from emotion_classification.trainer import Trainer
 
 cs = ConfigStore.instance()
@@ -23,6 +23,11 @@ def main(config: TrainerConfig):
     if not os.path.isabs(dataroot):
         config.dataroot = os.path.join(hydra.utils.get_original_cwd(), dataroot)
 
+    config.visualize = True
+    config.batch_size = 2
+    config.dataroot = "/Users/yuji.kamiya/gws/xp/saoal/serif-classifier/data/model_input/no_ranyu/skinName"
+    config.model_path = "/Volumes/GoogleDrive/マイドライブ/ML/serif-classifier/serif-classifier/data/model_input/no_ranyu/skinName/llrd_reinit_lower_lr5e-6_epochs20.best.pth"
+    config.dataset_type = DatasetType.TEXT_CLASSIFICATION
     print(OmegaConf.to_yaml(config))
 
     pd.options.display.precision = 3
@@ -42,6 +47,10 @@ def main(config: TrainerConfig):
 
     if config.predict:
         trainer.predict()
+        sys.exit()
+
+    if config.visualize:
+        trainer.visualize()
         sys.exit()
 
     trainer.main()
