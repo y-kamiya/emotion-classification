@@ -83,8 +83,10 @@ class RobertaModel(BaseModel):
 
     @classmethod
     def _reinit(cls, config, model):
-        model.classifier.dense.weight.data.normal_(mean=0.0, std=cls.initializer_range)
-        model.classifier.dense.bias.data.zero_()
+        if hasattr(model.classifier, "dense"):
+            model.classifier.dense.weight.data.normal_(mean=0.0, std=cls.initializer_range)
+            model.classifier.dense.bias.data.zero_()
+
         for param in model.classifier.parameters():
             param.requires_grad = True
 
@@ -124,6 +126,8 @@ class CustomClassificationHead(nn.Module):
     def forward(self, x):
         # dropout is applied before this method is called
         # https://github.com/huggingface/transformers/blob/v4.1.1/src/transformers/models/bert/modeling_bert.py#L1380
+        if len(x.size()) == 3:
+            x = x[:, 0, :]  # take first token of sentence
         x = self.prelu1(self.fc1(x))
         x = self.prelu2(self.fc2(self.dropout(x)))
         x = self.prelu3(self.fc3(self.dropout(x)))
