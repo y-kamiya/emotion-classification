@@ -102,7 +102,14 @@ class FeatureExtractorRoberta(FeatureExtractorBase):
 
         outputs = self.model(**inputs, position_ids=position_ids)
 
-        return outputs.pooler_output.numpy()
+        mask = inputs.attention_mask
+        last_hidden = outputs.last_hidden_state
+
+        # average all tokens without paddings by sentence
+        valid_tokens = last_hidden * mask.unsqueeze(-1)
+        sentence_vectors = valid_tokens.sum(dim=1) / mask.sum(dim=1).unsqueeze(-1)
+
+        return sentence_vectors
 
 
 class SklearnTrainer:
