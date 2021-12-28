@@ -331,7 +331,7 @@ class SklearnTrainer:
         texts = self.dataset_predict.texts
         labels = self.dataset_predict.labels.argmax(dim=1).numpy()
         preds = model.predict(X)
-        probs = model.predict_proba(X) * 100
+        probs = model.decision_function(X) if self.config.model_type == ModelType.SVM else model.predict_proba(X) * 100
 
         pred_label_names = []
         result = []
