@@ -84,14 +84,16 @@ class RobertaModel(BaseModel):
     @classmethod
     def _reinit(cls, config, model):
         if hasattr(model.classifier, "dense"):
-            model.classifier.dense.weight.data.normal_(mean=0.0, std=cls.initializer_range)
+            model.classifier.dense.weight.data.normal_(
+                mean=0.0, std=cls.initializer_range
+            )
             model.classifier.dense.bias.data.zero_()
 
         for param in model.classifier.parameters():
             param.requires_grad = True
 
         for n in range(config.reinit_n_layers):
-            model.roberta.encoder.layer[-(n+1)].apply(cls._init_weight_and_bias)
+            model.roberta.encoder.layer[-(n + 1)].apply(cls._init_weight_and_bias)
 
     @classmethod
     def _init_weight_and_bias(cls, module):

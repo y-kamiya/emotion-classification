@@ -62,6 +62,6 @@ class TrainerConfig:
     sampler_alpha: float = 0
     reinit_n_layers: int = 5
 
-    tensorboard_log_dir: str = "${dataroot}/runs/${name}"
-    model_path: str = "${dataroot}/${name}.pth"
-    best_model_path: str = "${dataroot}/${name}.best.pth"
+    tensorboard_log_dir: str = "${.dataroot}/runs/${.name}"
+    model_path: str = "${.dataroot}/${.name}.pth"
+    best_model_path: str = "${.dataroot}/${.name}.best.pth"
