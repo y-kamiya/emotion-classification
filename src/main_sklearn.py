@@ -16,7 +16,7 @@ cs = ConfigStore.instance()
 cs.store(name="base_config", node=SklearnConfig)
 
 
-@hydra.main(config_path="conf", config_name="main_no_dnn")
+@hydra.main(config_path="conf", config_name="main_sklearn")
 def main(config: SklearnConfig):
     dataroot = config.trainer.dataroot
     if not os.path.isabs(dataroot):
