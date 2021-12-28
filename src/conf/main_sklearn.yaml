@@ -1,0 +1,7 @@
+defaults:
+  - base_config
+  - _self_
+
+trainer:
+  dataroot: data/debug
+  no_save: true

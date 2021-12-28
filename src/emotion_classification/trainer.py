@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 import io
 import os
 import time
+from logging import Logger, getLogger
+from typing import Optional
 
 import cv2
 import matplotlib.pyplot as plt
@@ -9,42 +13,67 @@ import numpy as np
 import pandas as pd
 import pycm
 import torch
-import torch_optimizer as optim
+import torch_optimizer
 from sklearn import metrics
 from tabulate import tabulate
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from transformers import (
+    AdamW,
+    BatchEncoding,
+    PreTrainedModel,
+    PreTrainedTokenizer,
+    get_linear_schedule_with_warmup,
+)
 
 import apex
 
+from .config import DatasetType, ModelType, OptimizerType, TrainerConfig
+from .dataset import (
+    BaseDataset,
+    EmotionDataset,
+    Phase,
+    SemEval2018EmotionDataset,
+    TextClassificationDataset,
+)
 from .model import BertModel, RobertaModel
+from .sampler import SamplerFactory
 
 
 class Trainer:
-    def __init__(self, config):
+    def __init__(self, config: TrainerConfig, logger: Optional[Logger] = None) -> None:
         self.config = config
+        self.logger = getLogger(__name__) if logger is None else logger
 
         if self.config.predict:
-            dataset = self.config.dataset_class(self.config, "predict")
+            dataset = self.__create_dataset(Phase.PREDICT)
             self.dataloader_predict = DataLoader(
                 dataset, batch_size=self.config.batch_size
             )
         else:
-            dataset = self.config.dataset_class(self.config, "train")
-            self.dataloader_train = DataLoader(
-                dataset, batch_size=self.config.batch_size, shuffle=True
-            )
+            dataset = self.__create_dataset(Phase.TRAIN)
+            self.dataloader_train = self.__create_dataloader(dataset)
 
-            data_eval = self.config.dataset_class(self.config, "eval")
+            data_eval = self.__create_dataset(Phase.EVAL)
             self.dataloader_eval = DataLoader(
                 data_eval, batch_size=self.config.batch_size, shuffle=False
             )
 
-        self.model, self.tokenizer = self.__create_model(config, dataset.n_labels)
+        self.model, self.tokenizer = self.__create_model(dataset.n_labels)
 
-        self.optimizer = optim.RAdam(self.model.parameters(), lr=config.lr)
+        self.optimizer = self.__create_optimizer(self.model)
+
+        self.scheduler = None
+        if config.optimizer_type != OptimizerType.RADAM:
+            self.scheduler = get_linear_schedule_with_warmup(
+                optimizer=self.optimizer,
+                num_warmup_steps=self.config.warmup_steps,
+                num_training_steps=int(
+                    len(dataset) / self.config.batch_size * self.config.epochs
+                ),
+            )
 
         self.writer = SummaryWriter(log_dir=config.tensorboard_log_dir)
         self.best_f1_score = 0.0
@@ -54,22 +83,86 @@ class Trainer:
                 self.model, self.optimizer, "O1"
             )
 
+        self.start_epoch = 0
         self.load(self.config.model_path)
 
         if self.config.freeze_base:
             for param in self.model.base_model.parameters():
                 param.requires_grad = False
 
-    def __create_model(self, config, n_labels):
-        if config.model_type == "bert":
-            return BertModel.create(config, n_labels)
+    def __create_optimizer(self, model):
+        opt_parameters = []
+        named_parameters = list(model.named_parameters())
 
-        if config.model_type == "roberta":
-            return RobertaModel.create(config, n_labels)
+        no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
+        set_2 = ["layer.4", "layer.5", "layer.6", "layer.7"]
+        set_3 = ["layer.8", "layer.9", "layer.10", "layer.11"]
+        init_lr = self.config.lr
 
-        assert False, f"model_type: {config.model_type} is not defined"
+        for i, (name, params) in enumerate(named_parameters):
 
-    def forward(self, inputs, labels):
+            weight_decay = 0.0 if any(p in name for p in no_decay) else 0.01
+
+            if name.startswith("roberta.embeddings") or name.startswith(
+                "roberta.encoder"
+            ):
+                lr = init_lr
+                lr = init_lr * 1.75 if any(p in name for p in set_2) else lr
+                lr = init_lr * 3.5 if any(p in name for p in set_3) else lr
+
+                opt_parameters.append(
+                    {"params": params, "weight_decay": weight_decay, "lr": lr}
+                )
+
+            if name.startswith("classifier"):
+                lr = init_lr * 3.6
+
+                opt_parameters.append(
+                    {"params": params, "weight_decay": weight_decay, "lr": lr}
+                )
+
+        if self.config.optimizer_type != OptimizerType.RADAM:
+            return AdamW(opt_parameters, lr=init_lr)
+
+        return torch_optimizer.RAdam(opt_parameters, lr=init_lr)
+
+    def __create_dataloader(self, dataset):
+        alpha = max(0, min(self.config.sampler_alpha, 1))
+
+        if alpha == 0:
+            return DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True)
+
+        sampler = SamplerFactory(self.logger).get(
+            class_idxs=dataset.index_list_by_label(),
+            batch_size=self.config.batch_size,
+            n_batches=int(len(dataset) / self.config.batch_size),
+            alpha=alpha,
+            kind="random",
+        )
+
+        return DataLoader(dataset, batch_sampler=sampler)
+
+    def __create_dataset(self, phase: Phase) -> BaseDataset:
+        if self.config.dataset_type == DatasetType.EMOTION:
+            return EmotionDataset(self.config, phase, self.logger)
+
+        if self.config.dataset_type == DatasetType.SEM_EVAL_2018_EMOTION:
+            self.config.multi_labels = True
+            return SemEval2018EmotionDataset(self.config, phase, self.logger)
+
+        return TextClassificationDataset(self.config, phase, self.logger)
+
+    def __create_model(
+        self, n_labels: int
+    ) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
+        if self.config.model_type == ModelType.BERT:
+            return BertModel.create(self.config, n_labels)
+
+        return RobertaModel.create(self.config, n_labels)
+
+    def forward(
+        self, inputs: BatchEncoding, labels: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         position_ids = None
         if self.config.model_type == "roberta":
             batch_size, token_size = inputs["input_ids"].shape
@@ -87,7 +180,7 @@ class Trainer:
         )
         return outputs.loss, torch.argmax(outputs.logits, dim=1)
 
-    def train(self, epoch):
+    def train(self, epoch: int) -> None:
         self.model.train()
 
         for i, (texts, labels) in enumerate(self.dataloader_train):
@@ -108,9 +201,12 @@ class Trainer:
             self.optimizer.step()
             self.optimizer.zero_grad()
 
+            if self.scheduler is not None:
+                self.scheduler.step()
+
             if i % self.config.log_interval == 0:
                 elapsed_time = time.time() - start_time
-                self.config.logger.info(
+                self.logger.info(
                     "train epoch: {}, step: {}, loss: {:.2f}, time: {:.2f}".format(
                         epoch, i, loss, elapsed_time
                     )
@@ -119,10 +215,10 @@ class Trainer:
             self.writer.add_scalar("loss/train", loss, epoch, start_time)
             mlflow.log_metric("loss/train", loss.item(), epoch)
 
-        self.save(self.config.model_path)
+        self.save(self.config.model_path, epoch)
 
     @torch.no_grad()
-    def eval(self, epoch):
+    def eval(self, epoch: int) -> None:
         self.model.eval()
 
         all_labels = torch.empty(0)
@@ -138,7 +234,7 @@ class Trainer:
 
             loss, preds = self.forward(inputs, labels)
 
-            losses.append(loss)
+            losses.append(loss.item())
 
             if not self.config.multi_labels:
                 labels = torch.argmax(labels, dim=1)
@@ -148,7 +244,7 @@ class Trainer:
 
         elapsed_time = time.time() - start_time
         average_loss = sum(losses) / len(losses)
-        self.config.logger.info(
+        self.logger.info(
             "eval epoch: {}, loss: {:.2f}, time: {:.2f}".format(
                 epoch, average_loss, elapsed_time
             )
@@ -169,7 +265,7 @@ class Trainer:
                 else f1_score["accuracy"]
             )
             macro = f1_score["macro avg"]
-            mlflow.log_metric("loss/eval", average_loss.item(), epoch)
+            mlflow.log_metric("loss/eval", average_loss, epoch)
             mlflow.log_metric("metrics/f1_score_micro", micro, epoch)
             mlflow.log_metric("metrics/f1_score_macro", macro, epoch)
             self.writer.add_scalar("loss/eval", average_loss, epoch, start_time)
@@ -180,16 +276,17 @@ class Trainer:
 
             if self.best_f1_score < micro:
                 self.best_f1_score = micro
-                self.save(self.config.best_model_path)
+                self.save(self.config.best_model_path, epoch)
 
     @torch.no_grad()
-    def predict(self):
+    def predict(self) -> list[str]:
+        np.set_printoptions(formatter={"float": "{:.0f}".format})
+
         label_map = {
             value: key
             for key, value in self.dataloader_predict.dataset.label_index_map.items()
         }
         label_map[-1] = "none"
-        np.set_printoptions(precision=0)
 
         pred_label_names = []
         output_path = os.path.join(self.config.dataroot, "predict_result")
@@ -217,11 +314,13 @@ class Trainer:
                     )
                     pred_label_names.append(pred_label_name)
 
-        self.config.logger.info(f"write predicted result to {output_path}")
+        self.logger.info(f"write predicted result to {output_path}")
 
         return pred_label_names
 
-    def __log_confusion_matrix(self, all_preds, all_labels, epoch):
+    def __log_confusion_matrix(
+        self, all_preds: torch.Tensor, all_labels: torch.Tensor, epoch: int
+    ):
         buf = io.BytesIO()
         dataset = self.dataloader_eval.dataset
         label_map = {value: key for key, value in dataset.label_index_map.items()}
@@ -277,7 +376,7 @@ class Trainer:
         mlflow.log_artifact("confusion.png")
         self.writer.add_image("confusion_maatrix", img, epoch, dataformats="HWC")
 
-    def save(self, model_path):
+    def save(self, model_path: str, epoch: int) -> None:
         if self.config.no_save:
             return
 
@@ -287,19 +386,36 @@ class Trainer:
             "amp": apex.amp.state_dict() if self.config.fp16 else None,
             "batch_size": self.config.batch_size,
             "fp16": self.config.fp16,
+            "last_epoch": epoch,
         }
         torch.save(data, model_path)
-        self.config.logger.info(f"save model to {model_path}")
+        self.logger.info(f"save model to {model_path}")
 
-    def load(self, model_path):
+    def load(self, model_path: str) -> None:
         if not os.path.isfile(model_path):
-            self.config.logger.warning(f"model_path: {model_path} is not found")
+            self.logger.warning(f"model_path: {model_path} is not found")
             return
 
-        data = torch.load(model_path, map_location=self.config.device_name)
+        data = torch.load(model_path, map_location=self.config.device)
         self.model.load_state_dict(data["model"])
         self.optimizer.load_state_dict(data["optimizer"])
+        self.start_epoch = data["last_epoch"] + 1
         if self.config.fp16:
             apex.amp.load_state_dict(data["amp"])
 
-        self.config.logger.info(f"load model from {model_path}")
+        self.logger.info(f"load model from {model_path}")
+
+    def _can_eval(self, epoch):
+        if epoch % self.config.eval_interval == 0:
+            return True
+
+        if epoch == self.config.epochs - 1:
+            return True
+
+        return False
+
+    def main(self):
+        for epoch in range(self.start_epoch, self.config.epochs):
+            self.train(epoch)
+            if self._can_eval(epoch):
+                self.eval(epoch)
