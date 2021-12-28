@@ -15,6 +15,7 @@ import tensorflow_hub as hub
 import tensorflow_text
 import torch
 import pandas as pd
+import joblib
 from scipy.stats import uniform
 from sklearn import dummy, ensemble, metrics, neighbors, svm
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -109,12 +110,17 @@ class SklearnTrainer:
         self.config = config
         self.logger = getLogger(__name__) if logger is None else logger
 
-        self.dataset_train = TextClassificationDataset(
-            config.trainer, Phase.TRAIN, logger
-        )
-        self.dataset_eval = TextClassificationDataset(
-            config.trainer, Phase.EVAL, logger
-        )
+        if os.path.isfile(config.predict):
+            self.dataset_predict = TextClassificationDataset(
+                config.trainer, Phase.PREDICT, logger
+            )
+        else:
+            self.dataset_train = TextClassificationDataset(
+                config.trainer, Phase.TRAIN, logger
+            )
+            self.dataset_eval = TextClassificationDataset(
+                config.trainer, Phase.EVAL, logger
+            )
 
         self.vectorizer = self.__create_vectorizer(config.vectorizer_type)
 
@@ -157,7 +163,7 @@ class SklearnTrainer:
 
         return FeatureExtractorUse(self.config)
 
-    def __create_models(self, model_type: list[str]) -> list[tuple[Any, ModelType]]:
+    def __create_models(self) -> list[tuple[Any, ModelType]]:
         n_jobs = self.config.n_jobs
         model_type = self.config.model_type
         models = []
@@ -259,7 +265,7 @@ class SklearnTrainer:
         if self.config.sampling:
             X_train, y_train = self.sampler.fit_resample(X_train, y_train)
 
-        for (model, model_type) in self.__create_models([]):
+        for (model, model_type) in self.__create_models():
             if self.config.bagging:
                 model = ensemble.BaggingClassifier(base_estimator=model)
 
@@ -285,6 +291,11 @@ class SklearnTrainer:
                 y_eval,
             )
 
+            if self.config.save_model:
+                output_path = os.path.join(self.config.trainer.dataroot, f"{model_type.name}.pkl")
+                joblib.dump(model, output_path, compress=3)
+                self.logger.info(f"save model to {output_path}")
+
             if self.config.search_type != SearchType.NONE:
                 keys: list[str] = sum(
                     [[f"rank_test_{name}", f"mean_test_{name}"] for name in scoring], []
@@ -294,3 +305,37 @@ class SklearnTrainer:
                 df = df[keys + ["params"]]
                 df.to_csv("search_output", sep="\t")
                 print(tabulate(df, headers="keys", tablefmt="github", floatfmt=".3f"))
+
+    def predict(self):
+        np.set_printoptions(formatter={"float": "{:.0f}".format})
+
+        model_path = self.config.predict
+        if not os.path.isfile(model_path):
+            raise Exception(f"{model_path} is not found")
+
+        model = joblib.load(model_path)
+        X = self.vectorizer.vectorize(self.dataset_predict)
+
+        label_map = {
+            value: key
+            for key, value in self.dataset_predict.label_index_map.items()
+        }
+
+        texts = self.dataset_predict.texts
+        labels = self.dataset_predict.labels.argmax(dim=1).numpy()
+        preds = model.predict(X)
+        probs = model.predict_proba(X) * 100
+
+        pred_label_names = []
+        result = []
+        for i in range(len(texts)):
+            pred_label_name = label_map[preds[i]]
+            true_label_name = label_map[labels[i]]
+            result.append(f"{pred_label_name}\t{probs[i]}\t{true_label_name}\t{texts[i]}")
+            pred_label_names.append(pred_label_name)
+
+        output_path = os.path.join(self.config.trainer.dataroot, "predict_result")
+        with open(output_path, "w") as f:
+            f.write("\n".join(result))
+
+        return pred_label_names
