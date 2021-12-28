@@ -4,28 +4,33 @@ import os
 import time
 from abc import ABC, abstractmethod
 from collections import Counter
-from typing import Any, Optional
 from logging import Logger, getLogger
+from typing import Any, Optional
 
 import imblearn
+import joblib
 import lightgbm as lgb
 import MeCab
 import numpy as np
+import pandas as pd
 import tensorflow_hub as hub
 import tensorflow_text
 import torch
-import pandas as pd
-import joblib
+from omegaconf import OmegaConf
 from scipy.stats import uniform
 from sklearn import dummy, ensemble, metrics, neighbors, svm
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from tabulate import tabulate
 from transformers import RobertaModel, T5Tokenizer
-from omegaconf import OmegaConf
 
 from emotion_classification.dataset import BaseDataset, Phase, TextClassificationDataset
-from emotion_classification.sklearn.config import SklearnConfig, SearchType, ModelType, VectorizerType
+from emotion_classification.sklearn.config import (
+    ModelType,
+    SearchType,
+    SklearnConfig,
+    VectorizerType,
+)
 
 
 class FeatureExtractorBase(ABC):
@@ -299,7 +304,9 @@ class SklearnTrainer:
             )
 
             if not self.config.trainer.no_save:
-                output_path = os.path.join(self.config.trainer.dataroot, f"{model_type.name}.pkl")
+                output_path = os.path.join(
+                    self.config.trainer.dataroot, f"{model_type.name}.pkl"
+                )
                 joblib.dump(model, output_path, compress=3)
                 self.logger.info(f"save model to {output_path}")
 
@@ -324,8 +331,7 @@ class SklearnTrainer:
         X = self.vectorizer.vectorize(self.dataset_predict)
 
         label_map = {
-            value: key
-            for key, value in self.dataset_predict.label_index_map.items()
+            value: key for key, value in self.dataset_predict.label_index_map.items()
         }
 
         texts = self.dataset_predict.texts
@@ -341,7 +347,9 @@ class SklearnTrainer:
         for i in range(len(texts)):
             pred_label_name = label_map[preds[i]]
             true_label_name = label_map[labels[i]]
-            result.append(f"{pred_label_name}\t{probs[i]}\t{true_label_name}\t{texts[i]}")
+            result.append(
+                f"{pred_label_name}\t{probs[i]}\t{true_label_name}\t{texts[i]}"
+            )
             pred_label_names.append(pred_label_name)
 
         output_path = os.path.join(self.config.trainer.dataroot, "predict_result")

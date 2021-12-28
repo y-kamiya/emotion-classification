@@ -9,7 +9,7 @@ from hydra.core.config_store import ConfigStore
 from logzero import setup_logger
 from omegaconf import OmegaConf
 
-from emotion_classification.sklearn.config import SklearnConfig, SearchType, ModelType
+from emotion_classification.sklearn.config import ModelType, SearchType, SklearnConfig
 from emotion_classification.sklearn.trainer import SklearnTrainer
 
 cs = ConfigStore.instance()
@@ -24,7 +24,9 @@ def main(config: SklearnConfig):
 
     model_path = config.trainer.model_path
     if not os.path.isabs(model_path):
-        config.trainer.model_path = os.path.join(hydra.utils.get_original_cwd(), model_path)
+        config.trainer.model_path = os.path.join(
+            hydra.utils.get_original_cwd(), model_path
+        )
 
     print(OmegaConf.to_yaml(config))
 

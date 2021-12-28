@@ -20,11 +20,17 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from transformers import BatchEncoding, PreTrainedModel, PreTrainedTokenizer, AdamW, get_linear_schedule_with_warmup
+from transformers import (
+    AdamW,
+    BatchEncoding,
+    PreTrainedModel,
+    PreTrainedTokenizer,
+    get_linear_schedule_with_warmup,
+)
 
 import apex
 
-from .config import DatasetType, ModelType, TrainerConfig, OptimizerType
+from .config import DatasetType, ModelType, OptimizerType, TrainerConfig
 from .dataset import (
     BaseDataset,
     EmotionDataset,
@@ -64,7 +70,9 @@ class Trainer:
             self.scheduler = get_linear_schedule_with_warmup(
                 optimizer=self.optimizer,
                 num_warmup_steps=self.config.warmup_steps,
-                num_training_steps=int(len(dataset) / self.config.batch_size * self.config.epochs),
+                num_training_steps=int(
+                    len(dataset) / self.config.batch_size * self.config.epochs
+                ),
             )
 
         self.writer = SummaryWriter(log_dir=config.tensorboard_log_dir)
@@ -84,32 +92,34 @@ class Trainer:
 
     def __create_optimizer(self, model):
         opt_parameters = []
-        named_parameters = list(model.named_parameters()) 
-        
+        named_parameters = list(model.named_parameters())
+
         no_decay = ["bias", "LayerNorm.bias", "LayerNorm.weight"]
         set_2 = ["layer.4", "layer.5", "layer.6", "layer.7"]
         set_3 = ["layer.8", "layer.9", "layer.10", "layer.11"]
         init_lr = self.config.lr
-        
-        for i, (name, params) in enumerate(named_parameters):  
-            
+
+        for i, (name, params) in enumerate(named_parameters):
+
             weight_decay = 0.0 if any(p in name for p in no_decay) else 0.01
-     
-            if name.startswith("roberta.embeddings") or name.startswith("roberta.encoder"):            
-                lr = init_lr       
+
+            if name.startswith("roberta.embeddings") or name.startswith(
+                "roberta.encoder"
+            ):
+                lr = init_lr
                 lr = init_lr * 1.75 if any(p in name for p in set_2) else lr
                 lr = init_lr * 3.5 if any(p in name for p in set_3) else lr
-                
-                opt_parameters.append({"params": params,
-                                       "weight_decay": weight_decay,
-                                       "lr": lr})  
-                
+
+                opt_parameters.append(
+                    {"params": params, "weight_decay": weight_decay, "lr": lr}
+                )
+
             if name.startswith("classifier"):
-                lr = init_lr * 3.6 
-                
-                opt_parameters.append({"params": params,
-                                       "weight_decay": weight_decay,
-                                       "lr": lr})    
+                lr = init_lr * 3.6
+
+                opt_parameters.append(
+                    {"params": params, "weight_decay": weight_decay, "lr": lr}
+                )
 
         if self.config.optimizer_type != OptimizerType.RADAM:
             return AdamW(opt_parameters, lr=init_lr)
