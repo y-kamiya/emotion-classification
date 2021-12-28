@@ -117,7 +117,7 @@ class SklearnTrainer:
         self.config = config
         self.logger = getLogger(__name__) if logger is None else logger
 
-        if os.path.isfile(config.predict):
+        if config.trainer.predict:
             self.dataset_predict = TextClassificationDataset(
                 config.trainer, Phase.PREDICT, logger
             )
@@ -298,7 +298,7 @@ class SklearnTrainer:
                 y_eval,
             )
 
-            if self.config.save_model:
+            if not self.config.trainer.no_save:
                 output_path = os.path.join(self.config.trainer.dataroot, f"{model_type.name}.pkl")
                 joblib.dump(model, output_path, compress=3)
                 self.logger.info(f"save model to {output_path}")
@@ -316,7 +316,7 @@ class SklearnTrainer:
     def predict(self):
         np.set_printoptions(formatter={"float": "{:.0f}".format})
 
-        model_path = self.config.predict
+        model_path = self.config.trainer.model_path
         if not os.path.isfile(model_path):
             raise Exception(f"{model_path} is not found")
 
@@ -331,7 +331,10 @@ class SklearnTrainer:
         texts = self.dataset_predict.texts
         labels = self.dataset_predict.labels.argmax(dim=1).numpy()
         preds = model.predict(X)
-        probs = model.decision_function(X) if self.config.model_type == ModelType.SVM else model.predict_proba(X) * 100
+        try:
+            probs = model.predict_proba(X) * 100
+        except AttributeError:
+            probs = model.decision_function(X)
 
         pred_label_names = []
         result = []

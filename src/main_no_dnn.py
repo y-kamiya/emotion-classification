@@ -22,9 +22,9 @@ def main(config: SklearnConfig):
     if not os.path.isabs(dataroot):
         config.trainer.dataroot = os.path.join(hydra.utils.get_original_cwd(), dataroot)
 
-    predict = config.predict
-    if not os.path.isabs(predict):
-        config.predict = os.path.join(hydra.utils.get_original_cwd(), config.predict)
+    model_path = config.trainer.model_path
+    if not os.path.isabs(model_path):
+        config.trainer.model_path = os.path.join(hydra.utils.get_original_cwd(), model_path)
 
     print(OmegaConf.to_yaml(config))
 
@@ -40,7 +40,7 @@ def main(config: SklearnConfig):
 
     trainer = SklearnTrainer(config, logger)
 
-    if os.path.isfile(config.predict):
+    if config.trainer.predict:
         print(trainer.predict())
         sys.exit()
 

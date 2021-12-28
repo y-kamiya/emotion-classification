@@ -4,3 +4,4 @@ defaults:
 
 trainer:
   dataroot: data/debug
+  no_save: true

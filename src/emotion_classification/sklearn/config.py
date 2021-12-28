@@ -29,8 +29,6 @@ class SearchType(Enum):
 
 @dataclass
 class SklearnConfig:
-    predict: str = ""
-    save_model: bool = False
     vectorizer_type: VectorizerType = VectorizerType.USE
     model_type: ModelType = ModelType.KNN
     search_type: SearchType = SearchType.NONE
